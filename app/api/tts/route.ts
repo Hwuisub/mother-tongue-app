@@ -2,17 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import textToSpeech from "@google-cloud/text-to-speech";
 
-export const runtime = "nodejs"; // Node 환경에서 돌게 강제
+export const runtime = "nodejs";
 
 const client = new textToSpeech.TextToSpeechClient({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!),
+  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "{}"),
 });
-
 
 export async function POST(req: NextRequest) {
   try {
     const { text, ttsLang } = await req.json();
 
+    // ✅ TTS는 이 두 개만 받는다
     if (!text || !ttsLang) {
       return NextResponse.json(
         { error: "Missing text or ttsLang" },
@@ -20,11 +20,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Google Cloud TTS 요청
     const [response] = await client.synthesizeSpeech({
       input: { text },
       voice: {
-        languageCode: ttsLang, // 예: "fr-FR", "en-US"
+        languageCode: ttsLang, // 예: "en-US", "ko-KR"
         ssmlGender: "NEUTRAL",
       },
       audioConfig: {
@@ -40,7 +39,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Node Buffer → base64 문자열로 변환해서 반환
     const base64 = Buffer.from(
       audioContent as Uint8Array
     ).toString("base64");

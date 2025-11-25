@@ -1,75 +1,166 @@
-import { NextRequest, NextResponse } from "next/server";
+// app/api/generate/route.js
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+export const runtime = "nodejs";
+
+// OpenAI 클라이언트
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "",
+});
+
+// 모국어 코드 → 이름 (설명용)
+const LANG_NAME = {
+  ko: "Korean (Hangul)",
+  en: "English (Latin alphabet)",
+  fr: "French (Latin alphabet)",
+  es: "Spanish (Latin alphabet)",
+  ru: "Russian (Cyrillic alphabet)",
+};
+
+// 모국어별 발음 표기 규칙 (⚠ 타입 전부 뺌)
+function buildPronGuide(nativeLang) {
+  switch (nativeLang) {
+    case "ko":
+      return `
+Write the pronunciation using only Korean Hangul letters.
+Do NOT use Latin letters or IPA.
+Do NOT copy the target sentence itself.
+Example:
+- Target sentence: "Bonjour"
+- Pronunciation in Korean: "봉쥬르"
+`;
+    case "en":
+      return `
+Write the pronunciation using only the English alphabet (Latin letters).
+Do NOT use Korean Hangul or any non-Latin script.
+Do NOT translate the sentence, only show how it sounds.
+The output MUST look like a romanization, not the original sentence.
+Example:
+- Target sentence: "집에 가고 싶었어요."
+- Correct: "jibe gago sipeosseoyo"
+- Wrong: "집에 가고 싶었어요."
+`;
+    case "fr":
+      return `
+Write the pronunciation using only normal French spelling (Latin letters).
+Do NOT use Korean Hangul or IPA.
+Do NOT translate the sentence, only show how it sounds.
+`;
+    case "es":
+      return `
+Write the pronunciation using only normal Spanish spelling (Latin letters).
+Do NOT use Korean Hangul or IPA.
+Do NOT translate the sentence, only show how it sounds.
+`;
+    case "ru":
+      return `
+Write the pronunciation using only Russian Cyrillic letters.
+Do NOT use Latin letters or IPA.
+Do NOT translate the sentence, only show how it sounds.
+Example:
+- Target sentence: "hello"
+- Pronunciation in Russian: "хэлоу"
+`;
+    default:
+      return `
+Write the pronunciation using the user's native writing system.
+Do NOT use IPA and do NOT translate.
+If the native language uses a Latin alphabet, use only Latin letters.
+`;
+  }
+}
 
 export async function POST(req) {
   try {
-    const { nativeText, nativeLang, targetLang } = await req.json();
+    const body = await req.json();
+    const nativeText = body.nativeText;
+    const nativeLang = body.nativeLang;
+    const targetLang = body.targetLang;
 
-    if (!nativeText || !targetLang) {
+    if (!nativeText || !nativeLang || !targetLang) {
       return NextResponse.json(
-        { error: "Missing nativeText or targetLang" },
+        { error: "Missing nativeText, nativeLang or targetLang" },
         { status: 400 }
       );
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "OPENAI_API_KEY is not set" },
-        { status: 500 }
-      );
-    }
+    const nativeName =
+      LANG_NAME[nativeLang] ||
+      "the user's native language (writing system)";
+    const targetName =
+      LANG_NAME[targetLang] ||
+      "the target language (writing system)";
+    const pronGuide = buildPronGuide(nativeLang);
 
-    const prompt = `
-당신은 한국인 학습자를 도와주는 언어 선생님입니다.
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `
+You are a helpful language tutor.
 
-- 학습자의 모국어: ${nativeLang}
-- 목표 언어: ${targetLang}
-- 학습자가 말한 문장: "${nativeText}"
+Given:
+- user's native language: ${nativeName} (code: ${nativeLang})
+- target language: ${targetName} (code: ${targetLang})
 
-1) 먼저 목표 언어(${targetLang})로 자연스럽고 너무 길지 않은 문장 하나를 만들어 주세요.
-2) 그 문장을 한국어식 발음으로 적어 주세요. (한글만 사용)
+Task:
+1. Create ONE natural, CEFR A2–B1 level sentence in the TARGET language (${targetName}),
+   that would be a reasonable response to the user's original sentence.
+2. Provide a pronunciation guide for that sentence, written in the USER'S NATIVE LANGUAGE writing system (${nativeName}).
 
-반환 형식(JSON):
-{"sentence": "예시", "pron_ko": "예시"}
-`;
+VERY IMPORTANT for pronunciation:
+${pronGuide}
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-      }),
+Rules:
+- "sentence" MUST be written in the target language (${targetName}).
+- "pron_native" MUST represent how "sentence" sounds, written in the native language writing system.
+- "pron_native" MUST NOT be identical to "sentence".
+- "pron_native" MUST NOT be a translation. It is only how the sentence sounds.
+- Do NOT include IPA symbols.
+- Return ONLY a JSON object like:
+  {
+    "sentence": "...",       // sentence in the target language
+    "pron_native": "..."     // pronunciation written in the native language writing system
+  }
+`.trim(),
+        },
+        {
+          role: "user",
+          content: `
+Native language code: ${nativeLang}
+Target language code: ${targetLang}
+
+User's original sentence in native language:
+${nativeText}
+`.trim(),
+        },
+      ],
     });
 
-    if (!response.ok) {
-      const text = await response.text();
+    const content = completion.choices[0] &&
+      completion.choices[0].message &&
+      completion.choices[0].message.content;
+
+    if (!content) {
       return NextResponse.json(
-        { error: "OpenAI API error", detail: text },
+        { error: "No content from OpenAI" },
         { status: 500 }
       );
     }
 
-    const data = await response.json();
+    const parsed = JSON.parse(content);
 
-    let parsed = { sentence: "", pron_ko: "" };
-
-    try {
-      const content = data.choices?.[0]?.message?.content ?? "";
-      parsed = JSON.parse(content);
-    } catch (e) {
-      console.error("JSON parse error:", e);
-    }
-
-    return NextResponse.json(parsed);
-  } catch (e) {
-    console.error(e);
+    return NextResponse.json({
+      sentence: parsed.sentence || "",
+      pron_native: parsed.pron_native || "",
+    });
+  } catch (err) {
+    console.error("Generate API error:", err);
     return NextResponse.json(
-      { error: "Server error while generating sentence" },
+      { error: "Generate API server error" },
       { status: 500 }
     );
   }

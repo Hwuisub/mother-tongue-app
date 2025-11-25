@@ -25,7 +25,6 @@ const LANGUAGES: Language[] = [
   { code: "ru", label: "Русский", ttsLang: "ru-RU" },
 ];
 
-// 모국어별 질문
 const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
   ko: [
     "오늘 하루는 어떻게 시작했나요?",
@@ -54,16 +53,14 @@ const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
   ],
 };
 
-// 모국어 안내 문구 (언어별)
 const LABEL_NATIVE_PROMPT: Record<string, string> = {
   ko: "모국어로 편하게 대답해보세요",
   en: "Answer comfortably in your native language",
   fr: "Répondez librement dans votre langue maternelle",
   es: "Responde cómodamente en tu lengua materna",
-  ru: "Отвечайте libreно на своём родном языке",
+  ru: "Отвечайте свободно на своём родном языке",
 };
 
-// UI 텍스트 (설정 화면 + 연습 화면, 모국어에 따라 변경)
 type UiTexts = {
   setupTitle: string;
   setupSubtitle: string;
@@ -81,7 +78,7 @@ type UiTexts = {
   generateButtonLoading: string;
   foreignSentenceLabel: string;
   listenButton: string;
-  koreanPronLabel: string;
+  nativePronLabel: string;
   doneMessage: string;
   backToSetup: string;
   nextSet: string;
@@ -107,7 +104,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
     generateButtonLoading: "외국어 문장 만드는 중...",
     foreignSentenceLabel: "외국어 문장",
     listenButton: "🔊 소리로 듣기",
-    koreanPronLabel: "한국어식 발음",
+    nativePronLabel: "모국어 발음",
     doneMessage: "오늘 연습이 끝났습니다. 수고하셨어요!",
     backToSetup: "언어/세트 다시 선택",
     nextSet: "다음 세트로 →",
@@ -131,7 +128,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
     generateButtonLoading: "Generating a foreign sentence...",
     foreignSentenceLabel: "Foreign sentence",
     listenButton: "🔊 Listen",
-    koreanPronLabel: "Korean-style pronunciation",
+    nativePronLabel: "Pronunciation in your native language",
     doneMessage: "You’ve finished today’s practice. Well done!",
     backToSetup: "Change languages / sets",
     nextSet: "Next set →",
@@ -157,7 +154,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
     generateButtonLoading: "Création de la phrase en langue étrangère...",
     foreignSentenceLabel: "Phrase en langue étrangère",
     listenButton: "🔊 Écouter",
-    koreanPronLabel: "Prononciation à la coréenne",
+    nativePronLabel: "Prononciation dans ta langue maternelle",
     doneMessage: "Tu as terminé ta pratique pour aujourd’hui. Bravo !",
     backToSetup: "Changer les langues / séries",
     nextSet: "Série suivante →",
@@ -184,7 +181,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
       "Creando una frase en idioma extranjero...",
     foreignSentenceLabel: "Frase en idioma extranjero",
     listenButton: "🔊 Escuchar",
-    koreanPronLabel: "Pronunciación al estilo coreano",
+    nativePronLabel: "Pronunciación en tu lengua materna",
     doneMessage:
       "Has terminado la práctica de hoy. ¡Buen trabajo!",
     backToSetup: "Cambiar lenguas / series",
@@ -213,7 +210,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
       "Создаю фразу на иностранном языке...",
     foreignSentenceLabel: "Фраза на иностранном языке",
     listenButton: "🔊 Прослушать",
-    koreanPronLabel: "Произношение по-корейски",
+    nativePronLabel: "Произношение на родном языке",
     doneMessage:
       "Ты завершил(а) тренировку на сегодня. Отличная работа!",
     backToSetup: "Изменить языки / количество сетов",
@@ -240,7 +237,6 @@ export default function Home() {
   const [targetLang, setTargetLang] = useState<string>("en");
   const [sets, setSets] = useState<number>(2);
 
-  // 선택된 모국어에 맞는 질문 목록
   const questions =
     QUESTIONS_BY_NATIVE[nativeLang] ?? QUESTIONS_BY_NATIVE["ko"];
 
@@ -249,7 +245,7 @@ export default function Home() {
 
   const [nativeText, setNativeText] = useState<string>("");
   const [foreignText, setForeignText] = useState<string>("");
-  const [foreignPronKo, setForeignPronKo] = useState<string>("");
+  const [foreignPronNative, setForeignPronNative] = useState<string>("");
 
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
@@ -270,12 +266,11 @@ export default function Home() {
     if (firstTarget) setTargetLang(firstTarget.code);
   };
 
-  // isListening 값을 ref에도 동기화 (계속 듣기용)
   useEffect(() => {
     isListeningRef.current = isListening;
   }, [isListening]);
 
-  // 음성 인식 초기화 (선택한 모국어에 맞게 + 내가 멈출 때까지 계속 듣기)
+  // 음성 인식: 모국어에 맞게 + 내가 멈출 때까지 계속
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -292,14 +287,12 @@ export default function Home() {
     const langConfig = LANGUAGES.find((l) => l.code === nativeLang);
     recog.lang = langConfig ? langConfig.ttsLang : "ko-KR";
 
-    // 계속 듣기
     recog.continuous = true;
     recog.interimResults = false;
 
     recog.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setNativeText(transcript);
-      // isListening은 사용자가 버튼으로 끌 때까지 유지
     };
 
     recog.onerror = () => {
@@ -329,7 +322,7 @@ export default function Home() {
 
   const resetForeignOutputs = () => {
     setForeignText("");
-    setForeignPronKo("");
+    setForeignPronNative("");
   };
 
   const startPractice = () => {
@@ -341,7 +334,7 @@ export default function Home() {
 
   const handleMicToggle = () => {
     if (!recognitionRef.current) {
-      alert("이 브라우저에서는 음성 인식을 지원되지 않습니다.");
+      alert("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
       return;
     }
 
@@ -356,7 +349,6 @@ export default function Home() {
     }
   };
 
-  // GPT 호출
   const generateForeign = async () => {
     if (!nativeText.trim()) {
       alert("먼저 모국어로 한 문장을 말하거나 적어주세요.");
@@ -385,7 +377,7 @@ export default function Home() {
 
       const data = await res.json();
       setForeignText(data.sentence || "");
-      setForeignPronKo(data.pron_ko || "");
+      setForeignPronNative(data.pron_native || "");
     } catch (e) {
       console.error(e);
       alert("네트워크 오류가 발생했습니다.");
@@ -394,7 +386,6 @@ export default function Home() {
     }
   };
 
-  // Google TTS 호출 후 재생
   const playTTS = async () => {
     if (!foreignText.trim()) return;
 
@@ -450,7 +441,7 @@ export default function Home() {
     resetForeignOutputs();
   };
 
-  // --------- 첫 화면: 모국어 선택 (UI는 일단 영어로) ---------
+  // 1단계: 모국어 선택
   if (step === "choose-native") {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -492,7 +483,7 @@ export default function Home() {
     );
   }
 
-  // --------- 두 번째 화면: 언어/세트 설정 (모든 글이 모국어) ---------
+  // 2단계: 언어/세트 설정
   if (step === "setup") {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -573,7 +564,7 @@ export default function Home() {
     );
   }
 
-  // --------- 연습 화면 ---------
+  // 3단계: 연습 화면
   if (step === "practice") {
     const q = questions[currentIndex] ?? questions[0];
 
@@ -649,9 +640,10 @@ export default function Home() {
                 </button>
               </div>
               <p className="mb-1">{foreignText}</p>
-              {foreignPronKo && (
+              {foreignPronNative && (
                 <p className="mt-1 text-xs text-gray-800">
-                  <strong>{texts.koreanPronLabel}:</strong> {foreignPronKo}
+                  <strong>{texts.nativePronLabel}:</strong>{" "}
+                  {foreignPronNative}
                 </p>
               )}
             </div>
@@ -682,6 +674,5 @@ export default function Home() {
     );
   }
 
-  // 이론상 여기까지 오지 않지만, 타입 안전용 fallback
   return null;
 }
