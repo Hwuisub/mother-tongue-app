@@ -32,6 +32,18 @@ const QUESTIONS = [
 
 type Step = "setup" | "practice";
 
+function base64ToBlob(base64: string, mimeType: string) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
+
 export default function Home() {
   const [nativeLang, setNativeLang] = useState<string>("ko");
   const [targetLang, setTargetLang] = useState<string>("en");
@@ -167,19 +179,47 @@ export default function Home() {
     }
   };
 
-  const playTTS = () => {
-    if (!foreignText.trim()) return;
-    if (typeof window === "undefined") return;
+  const playTTS = async () => {
+  if (!foreignText.trim()) return;
 
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-
-    const utter = new SpeechSynthesisUtterance(foreignText);
+  try {
+    // targetLang에서 ttsLang 찾기 (en-US, fr-FR 등)
     const langConfig = LANGUAGES.find((l) => l.code === targetLang);
-    utter.lang = langConfig ? langConfig.ttsLang : "en-US";
-    synth.cancel();
-    synth.speak(utter);
-  };
+    const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
+
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: foreignText,
+        ttsLang,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("TTS API error:", await res.text());
+      alert("소리를 불러오는 중 오류가 발생했습니다.");
+      return;
+    }
+
+    const data = await res.json();
+    const base64 = data.audioContent as string;
+
+    if (!base64) {
+      alert("TTS 응답에 음성 데이터가 없습니다.");
+      return;
+    }
+
+    const blob = base64ToBlob(base64, "audio/mpeg");
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+  } catch (e) {
+    console.error("TTS fetch error:", e);
+    alert("소리를 불러오는 중 오류가 발생했습니다.");
+  }
+};
+
 
   const goNext = () => {
     const nextIndex = currentIndex + 1;
