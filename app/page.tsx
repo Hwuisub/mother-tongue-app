@@ -8,6 +8,7 @@ declare global {
 }
 
 type SpeechRecognition = any;
+
 import { useEffect, useRef, useState } from "react";
 
 type Language = {
@@ -23,14 +24,8 @@ const LANGUAGES: Language[] = [
   { code: "es", label: "Español", ttsLang: "es-ES" },
   { code: "ru", label: "Русский", ttsLang: "ru-RU" },
 ];
-const LABEL_NATIVE_PROMPT: Record<string, string> = {
-  ko: "모국어로 편하게 대답해보세요",
-  en: "Answer comfortably in your native language",
-  fr: "Répondez librement dans votre langue maternelle",
-  es: "Responde cómodamente en tu lengua materna",
-  ru: "Отвечайте свободно на своём родном языке",
-};
 
+// 모국어별 질문
 const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
   ko: [
     "오늘 하루는 어떻게 시작했나요?",
@@ -48,15 +43,24 @@ const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
     "Que fais-tu d'habitude pendant les jours fériés ?",
   ],
   es: [
-  "¿Cómo empezaste tu día hoy?",
-  "¿Qué hiciste anoche?",
-  "¿Qué sueles hacer durante los días festivos?",
-],
-ru: [
-  "Как ты начал(а) свой день сегодня?",
-  "Что ты делал(а) вчера вечером?",
-  "Что ты обычно делаешь в выходные или праздники?",
-],
+    "¿Cómo empezaste tu día hoy?",
+    "¿Qué hiciste anoche?",
+    "¿Qué sueles hacer durante los días festivos?",
+  ],
+  ru: [
+    "Как ты начал(а) свой день сегодня?",
+    "Что ты делал(а) вчера вечером?",
+    "Что ты обычно делаешь в выходные или праздники?",
+  ],
+};
+
+// 모국어 안내 문구 (언어별)
+const LABEL_NATIVE_PROMPT: Record<string, string> = {
+  ko: "모국어로 편하게 대답해보세요",
+  en: "Answer comfortably in your native language",
+  fr: "Répondez librement dans votre langue maternelle",
+  es: "Responde cómodamente en tu lengua materna",
+  ru: "Отвечайте свободно на своём родном языке",
 };
 
 type Step = "setup" | "practice";
@@ -78,6 +82,10 @@ export default function Home() {
   const [targetLang, setTargetLang] = useState<string>("en");
   const [sets, setSets] = useState<number>(2);
 
+  // 선택된 모국어에 맞는 질문 목록
+  const questions =
+    QUESTIONS_BY_NATIVE[nativeLang] ?? QUESTIONS_BY_NATIVE["ko"];
+
   const [step, setStep] = useState<Step>("setup");
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
@@ -89,6 +97,7 @@ export default function Home() {
 
   const [isListening, setIsListening] = useState<boolean>(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const isListeningRef = useRef<boolean>(false);
 
   const availableTargets = LANGUAGES.filter(
     (lang) => lang.code !== nativeLang
@@ -101,35 +110,51 @@ export default function Home() {
     if (firstTarget) setTargetLang(firstTarget.code);
   };
 
-  // 음성 인식 초기화
+  // isListening 값을 ref에도 동기화 (계속 듣기용)
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
+  // 음성 인식 초기화 (선택한 모국어에 맞게 + 내가 멈출 때까지 계속 듣기)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const SpeechRecognition =
+    const SR =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+
+    if (!SR) {
       console.warn("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
       return;
     }
 
-    const recog: SpeechRecognition = new SpeechRecognition();
+    const recog: SpeechRecognition = new SR();
     const langConfig = LANGUAGES.find((l) => l.code === nativeLang);
     recog.lang = langConfig ? langConfig.ttsLang : "ko-KR";
-    recog.continuous = false;
+
+    // ✅ 끊기지 않고 계속 듣기
+    recog.continuous = true;
     recog.interimResults = false;
 
-    recog.onresult = (event: SpeechRecognitionEvent) => {
+    recog.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setNativeText(transcript);
-      setIsListening(false);
+      // 여기서는 isListening을 끄지 않음 -> 사용자가 버튼으로 멈출 때까지 유지
     };
 
     recog.onerror = () => {
       setIsListening(false);
     };
+
+    // 인식이 한 번 끝나도, 아직 isListening이면 자동 재시작
     recog.onend = () => {
-      setIsListening(false);
+      if (isListeningRef.current) {
+        try {
+          recog.start();
+        } catch {
+          setIsListening(false);
+        }
+      }
     };
 
     recognitionRef.current = recog;
@@ -160,6 +185,7 @@ export default function Home() {
       alert("이 브라우저에서는 음성 인식이 지원되지 않습니다.");
       return;
     }
+
     if (!isListening) {
       setNativeText("");
       resetForeignOutputs();
@@ -177,6 +203,7 @@ export default function Home() {
       alert("먼저 모국어로 한 문장을 말하거나 적어주세요.");
       return;
     }
+
     try {
       setIsGenerating(true);
       resetForeignOutputs();
@@ -208,51 +235,51 @@ export default function Home() {
     }
   };
 
+  // Google TTS 호출 후 재생
   const playTTS = async () => {
-  if (!foreignText.trim()) return;
+    if (!foreignText.trim()) return;
 
-  try {
-    // targetLang에서 ttsLang 찾기 (en-US, fr-FR 등)
-    const langConfig = LANGUAGES.find((l) => l.code === targetLang);
-    const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
+    try {
+      const langConfig = LANGUAGES.find((l) => l.code === targetLang);
+      const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
 
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: foreignText,
-        ttsLang,
-      }),
-    });
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: foreignText,
+          ttsLang,
+        }),
+      });
 
-    if (!res.ok) {
-      console.error("TTS API error:", await res.text());
+      if (!res.ok) {
+        console.error("TTS API error:", await res.text());
+        alert("소리를 불러오는 중 오류가 발생했습니다.");
+        return;
+      }
+
+      const data = await res.json();
+      const base64 = data.audioContent as string;
+
+      if (!base64) {
+        alert("TTS 응답에 음성 데이터가 없습니다.");
+        return;
+      }
+
+      const blob = base64ToBlob(base64, "audio/mpeg");
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play();
+    } catch (e) {
+      console.error("TTS fetch error:", e);
       alert("소리를 불러오는 중 오류가 발생했습니다.");
-      return;
     }
-
-    const data = await res.json();
-    const base64 = data.audioContent as string;
-
-    if (!base64) {
-      alert("TTS 응답에 음성 데이터가 없습니다.");
-      return;
-    }
-
-    const blob = base64ToBlob(base64, "audio/mpeg");
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.play();
-  } catch (e) {
-    console.error("TTS fetch error:", e);
-    alert("소리를 불러오는 중 오류가 발생했습니다.");
-  }
-};
-
+  };
 
   const goNext = () => {
     const nextIndex = currentIndex + 1;
-    if (nextIndex >= Math.min(sets, QUESTIONS.length)) {
+    if (nextIndex >= Math.min(sets, questions.length)) {
       alert("오늘 연습이 끝났습니다. 수고하셨어요!");
       setStep("setup");
       setNativeText("");
@@ -279,11 +306,14 @@ export default function Home() {
 
           <div className="mb-4">
             <label className="mb-2 block font-semibold">
-  {LABEL_NATIVE_PROMPT[nativeLang]}
-  <span className="ml-1 text-xs text-gray-500">
-    ({LANGUAGES.find((l) => l.code === nativeLang)?.label})
-  </span>
-</label>
+              {LABEL_NATIVE_PROMPT[nativeLang]}
+              <span className="ml-1 text-xs text-gray-500">
+                (
+                {LANGUAGES.find((l) => l.code === nativeLang)?.label ||
+                  "모국어"}
+                )
+              </span>
+            </label>
             <div className="mb-2 flex items-center gap-2">
               <button
                 type="button"
