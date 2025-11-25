@@ -23,12 +23,41 @@ const LANGUAGES: Language[] = [
   { code: "es", label: "Español", ttsLang: "es-ES" },
   { code: "ru", label: "Русский", ttsLang: "ru-RU" },
 ];
+const LABEL_NATIVE_PROMPT: Record<string, string> = {
+  ko: "모국어로 편하게 대답해보세요",
+  en: "Answer comfortably in your native language",
+  fr: "Répondez librement dans votre langue maternelle",
+  es: "Responde cómodamente en tu lengua materna",
+  ru: "Отвечайте свободно на своём родном языке",
+};
 
-const QUESTIONS = [
-  "오늘 하루는 어떻게 시작했나요?",
-  "어제 저녁에는 무엇을 했나요?",
-  "휴일에 보통 무엇을 하며 시간을 보내나요?",
-];
+const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
+  ko: [
+    "오늘 하루는 어떻게 시작했나요?",
+    "어제 저녁에는 무엇을 했나요?",
+    "휴일에 보통 무엇을 하며 시간을 보내나요?",
+  ],
+  en: [
+    "How did you start your day today?",
+    "What did you do last evening?",
+    "What do you usually do on holidays?",
+  ],
+  fr: [
+    "Comment as-tu commencé ta journée aujourd'hui ?",
+    "Qu'as-tu fait hier soir ?",
+    "Que fais-tu d'habitude pendant les jours fériés ?",
+  ],
+  es: [
+  "¿Cómo empezaste tu día hoy?",
+  "¿Qué hiciste anoche?",
+  "¿Qué sueles hacer durante los días festivos?",
+],
+ru: [
+  "Как ты начал(а) свой день сегодня?",
+  "Что ты делал(а) вчера вечером?",
+  "Что ты обычно делаешь в выходные или праздники?",
+],
+};
 
 type Step = "setup" | "practice";
 
@@ -237,7 +266,7 @@ export default function Home() {
 
   // --------- 연습 화면 ---------
   if (step === "practice") {
-    const q = QUESTIONS[currentIndex] ?? QUESTIONS[0];
+    const q = questions[currentIndex] ?? questions[0];
 
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -250,14 +279,11 @@ export default function Home() {
 
           <div className="mb-4">
             <label className="mb-2 block font-semibold">
-              모국어로 편하게 말해보세요
-              <span className="ml-1 text-xs text-gray-500">
-                (
-                {LANGUAGES.find((l) => l.code === nativeLang)?.label ||
-                  "모국어"}
-                )
-              </span>
-            </label>
+  {LABEL_NATIVE_PROMPT[nativeLang]}
+  <span className="ml-1 text-xs text-gray-500">
+    ({LANGUAGES.find((l) => l.code === nativeLang)?.label})
+  </span>
+</label>
             <div className="mb-2 flex items-center gap-2">
               <button
                 type="button"
