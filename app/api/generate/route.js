@@ -57,6 +57,16 @@ Do NOT translate or use IPA.
   }
 }
 
+function normalizeForCompare(text) {
+  return text
+    ?.toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
+    .replace(/[\s\.,!?\"'`~()\[\]{}]/g, "") // 공백/기호 제거
+    .trim();
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -119,24 +129,34 @@ ${nativeText}
       ],
     });
 
-    const content =
-      completion.choices[0] &&
-      completion.choices[0].message &&
-      completion.choices[0].message.content;
+    const content = completion.choices[0]?.message?.content;
+if (!content) {
+  return NextResponse.json(
+    { error: "No content from OpenAI" },
+    { status: 500 }
+  );
+}
 
-    if (!content) {
-      return NextResponse.json(
-        { error: "No content from OpenAI" },
-        { status: 500 }
-      );
-    }
+const parsed = JSON.parse(content);
 
-    const parsed = JSON.parse(content);
+// 🔍 pron_native 검증 — L2 문장을 그대로 쓴 게 아닌지 확인
+const sentenceNorm = normalizeForCompare(parsed.sentence);
+const pronNorm = normalizeForCompare(parsed.pron_native);
 
-    return NextResponse.json({
-      sentence: parsed.sentence || "",
-      pron_native: parsed.pron_native || "",
-    });
+// 만약 발음이 문장을 그대로 복사한 경우 → 실패 처리
+if (!pronNorm || sentenceNorm === pronNorm) {
+  return NextResponse.json(
+    { error: "Invalid pron_native detected" },
+    { status: 500 }
+  );
+}
+
+// 정상일 때만 반환
+return NextResponse.json({
+  sentence: parsed.sentence,
+  pron_native: parsed.pron_native,
+});
+
   } catch (err) {
     console.error("Generate API error:", err);
     return NextResponse.json(
