@@ -11,6 +11,32 @@ type SpeechRecognition = any;
 
 import { useEffect, useRef, useState } from "react";
 
+function normalizeForCompare(text: string) {
+  return text
+    ?.toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
+    .replace(/[^a-zA-Z가-힣0-9]/g, "") // 문자/숫자만 남기기
+    .trim();
+}
+
+function calcSimilarity(a: string, b: string) {
+  const s1 = normalizeForCompare(a);
+  const s2 = normalizeForCompare(b);
+  if (!s1 || !s2) return 0;
+
+  const minLen = Math.min(s1.length, s2.length);
+  const maxLen = Math.max(s1.length, s2.length);
+  let same = 0;
+
+  for (let i = 0; i < minLen; i++) {
+    if (s1[i] === s2[i]) same++;
+  }
+
+  return same / maxLen;
+}
+
 type Language = {
   code: string;
   label: string;
@@ -256,24 +282,13 @@ function base64ToBlob(base64: string, mimeType: string) {
   return new Blob([byteArray], { type: mimeType });
 }
 
-// 간단한 문자열 정규화 & 비교용
-function normalizeForCompare(text: string) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
-    .replace(/[\.,!?¿¡«»"“”„]/g, "")
-    .trim();
-}
-
 function isPronunciationCloseEnough(spoken: string, expected: string) {
-  if (!spoken || !expected) return false;
-  const a = normalizeForCompare(spoken);
-  const b = normalizeForCompare(expected);
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.includes(b) || b.includes(a)) return true;
-  return false;
+  // 위에 정의한 calcSimilarity 재사용
+  const score = calcSimilarity(spoken, expected);
+
+  // 0.0 ~ 1.0 중에서, 0.55 이상이면 “비슷하게 읽었다”로 인정
+  // (너무 빡세면 0.5로 낮춰도 됨)
+  return score >= 0.55;
 }
 
 export default function Home() {
