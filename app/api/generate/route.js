@@ -1,10 +1,9 @@
-// app/api/generate/route.js
+// app/api/generate/route.ts  (또는 route.js)
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-// OpenAI 클라이언트
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
 });
@@ -18,55 +17,42 @@ const LANG_NAME = {
   ru: "Russian (Cyrillic alphabet)",
 };
 
-// 모국어별 발음 표기 규칙 (⚠ 타입 전부 뺌)
+// 모국어별 발음 표기 규칙
 function buildPronGuide(nativeLang) {
   switch (nativeLang) {
     case "ko":
       return `
-Write the pronunciation using only Korean Hangul letters.
+Write the pronunciation using only Korean Hangul.
 Do NOT use Latin letters or IPA.
-Do NOT copy the target sentence itself.
-Example:
-- Target sentence: "Bonjour"
-- Pronunciation in Korean: "봉쥬르"
+Example: "Bonjour" → "봉쥬르"
 `;
     case "en":
       return `
-Write the pronunciation using only the English alphabet (Latin letters).
-Do NOT use Korean Hangul or any non-Latin script.
-Do NOT translate the sentence, only show how it sounds.
-The output MUST look like a romanization, not the original sentence.
-Example:
-- Target sentence: "집에 가고 싶었어요."
-- Correct: "jibe gago sipeosseoyo"
-- Wrong: "집에 가고 싶었어요."
+Write the pronunciation using only normal English alphabet letters.
+Do NOT use Hangul or IPA.
+The output must be a romanization, not the original sentence.
+Example: "집에 가고 싶었어요." → "jibe gago sipeosseoyo"
 `;
     case "fr":
       return `
-Write the pronunciation using only normal French spelling (Latin letters).
-Do NOT use Korean Hangul or IPA.
-Do NOT translate the sentence, only show how it sounds.
+Write the pronunciation using only French alphabet letters.
+Do NOT use Hangul or IPA.
 `;
     case "es":
       return `
-Write the pronunciation using only normal Spanish spelling (Latin letters).
-Do NOT use Korean Hangul or IPA.
-Do NOT translate the sentence, only show how it sounds.
+Write the pronunciation using only Spanish alphabet letters.
+Do NOT use Hangul or IPA.
 `;
     case "ru":
       return `
 Write the pronunciation using only Russian Cyrillic letters.
 Do NOT use Latin letters or IPA.
-Do NOT translate the sentence, only show how it sounds.
-Example:
-- Target sentence: "hello"
-- Pronunciation in Russian: "хэлоу"
+Example: "hello" → "хэлоу"
 `;
     default:
       return `
 Write the pronunciation using the user's native writing system.
-Do NOT use IPA and do NOT translate.
-If the native language uses a Latin alphabet, use only Latin letters.
+Do NOT translate or use IPA.
 `;
   }
 }
@@ -86,11 +72,9 @@ export async function POST(req) {
     }
 
     const nativeName =
-      LANG_NAME[nativeLang] ||
-      "the user's native language (writing system)";
+      LANG_NAME[nativeLang] || "user's native language";
     const targetName =
-      LANG_NAME[targetLang] ||
-      "the target language (writing system)";
+      LANG_NAME[targetLang] || "target language";
     const pronGuide = buildPronGuide(nativeLang);
 
     const completion = await openai.chat.completions.create({
@@ -100,47 +84,43 @@ export async function POST(req) {
         {
           role: "system",
           content: `
-You are a helpful language tutor.
+You are a strict translation engine.
 
-Given:
-- user's native language: ${nativeName} (code: ${nativeLang})
-- target language: ${targetName} (code: ${targetLang})
+TASK:
+1. Translate the user's sentence EXACTLY into ${targetName}.
+   - Do NOT create new meaning.
+   - Do NOT invent information.
+   - Do NOT add extra content.
+   - Keep the meaning 100% identical.
 
-Task:
-1. Create ONE natural, CEFR A2–B1 level sentence in the TARGET language (${targetName}),
-   that would be a reasonable response to the user's original sentence.
-2. Provide a pronunciation guide for that sentence, written in the USER'S NATIVE LANGUAGE writing system (${nativeName}).
+2. Then write a pronunciation of the translated sentence
+   using ONLY the user's native writing system (${nativeName}).
 
-VERY IMPORTANT for pronunciation:
+PRONUNCIATION RULES:
 ${pronGuide}
 
-Rules:
-- "sentence" MUST be written in the target language (${targetName}).
-- "pron_native" MUST represent how "sentence" sounds, written in the native language writing system.
-- "pron_native" MUST NOT be identical to "sentence".
-- "pron_native" MUST NOT be a translation. It is only how the sentence sounds.
-- Do NOT include IPA symbols.
-- Return ONLY a JSON object like:
-  {
-    "sentence": "...",       // sentence in the target language
-    "pron_native": "..."     // pronunciation written in the native language writing system
-  }
+OUTPUT FORMAT (JSON only):
+{
+  "sentence": "<exact translation in target language>",
+  "pron_native": "<how it sounds written in user's native writing system>"
+}
 `.trim(),
         },
         {
           role: "user",
           content: `
-Native language code: ${nativeLang}
-Target language code: ${targetLang}
+Native language: ${nativeLang}
+Target language: ${targetLang}
 
-User's original sentence in native language:
+Translate this sentence exactly:
 ${nativeText}
 `.trim(),
         },
       ],
     });
 
-    const content = completion.choices[0] &&
+    const content =
+      completion.choices[0] &&
       completion.choices[0].message &&
       completion.choices[0].message.content;
 
