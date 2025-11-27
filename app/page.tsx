@@ -73,40 +73,6 @@ const LABEL_NATIVE_PROMPT: Record<string, string> = {
   ru: "Отвечайте свободно",
 };
 
-// ───────────── 발음 비교 유틸 (threshold 0.5) ─────────────
-function normalizeForCompare(text: string) {
-  return text
-    ?.toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
-    .replace(/[^a-zA-Z가-힣0-9]/g, "") // 문자/숫자만
-    .trim();
-}
-
-function calcSimilarity(a: string, b: string) {
-  const s1 = normalizeForCompare(a);
-  const s2 = normalizeForCompare(b);
-  if (!s1 || !s2) return 0;
-
-  const minLen = Math.min(s1.length, s2.length);
-  const maxLen = Math.max(s1.length, s2.length);
-  let same = 0;
-
-  for (let i = 0; i < minLen; i++) {
-    if (s1[i] === s2[i]) same++;
-  }
-
-  return same / maxLen;
-}
-
-function isPronunciationCloseEnough(spoken: string, expected: string) {
-  if (!spoken || !expected) return false;
-  const similarity = calcSimilarity(spoken, expected);
-  // 🔧 여기서 정확도 조절: 0.5 (요청값)
-  return similarity >= 0.5;
-}
-
 // ───────────── UI 텍스트 (모국어별) ─────────────
 type UiTexts = {
   setupTitle: string;
@@ -458,21 +424,11 @@ export default function Home() {
     recog.interimResults = false;
 
     recog.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript || "";
-      const ok = isPronunciationCloseEnough(
-        transcript,
-        foreignText
-      );
+  const transcript = e.results[0][0].transcript || "";
+  console.log("읽은 내용:", transcript);
+  setIsRepeatListening(false);
+};
 
-      if (ok) {
-        setRepeatCount((c) => Math.min(3, c + 1));
-      } else {
-        alert(
-          "조금 다르게 인식됐어요. 한 번 더 또박또박 읽어 주세요."
-        );
-      }
-      setIsRepeatListening(false);
-    };
 
     recog.onerror = () => setIsRepeatListening(false);
     recog.onend = () => setIsRepeatListening(false);
@@ -860,28 +816,7 @@ const generateForeign = async () => {
         {foreignPronNative}
       </p>
     )}
-
-    {/* 3회 반복 낭독 퀘스트 */}
-    <div className="mt-3 rounded-lg bg-white/70 p-3 text-xs text-gray-800">
-      <p className="mb-1 font-semibold">{texts.repeatQuestTitle}</p>
-      <p className="mb-2">{repeatCount} / 3</p>
-
-      {repeatCount < 3 ? (
-        <button
-          type="button"
-          onClick={handleRepeatMic}
-          className="rounded-full border border-indigo-500 px-3 py-1 text-xs font-semibold text-indigo-600 bg-white disabled:opacity-60"
-          disabled={isRepeatListening}
-        >
-          {isRepeatListening ? "🎤 듣는 중..." : texts.repeatQuestButton}
-        </button>
-      ) : (
-        <p className="mt-1 font-semibold text-emerald-600">
-          {texts.repeatQuestDone}
-        </p>
-      )}
-    </div>
-  </div>
+     </div>
 )}
 
 {aiResult && (
