@@ -145,10 +145,11 @@ const pronNorm = normalizeForCompare(parsed.pron_native);
 
 // 만약 발음이 문장을 그대로 복사한 경우 → 실패 처리
 if (!pronNorm || sentenceNorm === pronNorm) {
-  return NextResponse.json(
-    { error: "Invalid pron_native detected" },
-    { status: 500 }
-  );
+  // fallback: 발음이 이상하면 그냥 빈 문자열로 보내기
+  return NextResponse.json({
+    sentence: parsed.sentence,
+    pron_native: ""
+  });
 }
 
 // 정상일 때만 반환

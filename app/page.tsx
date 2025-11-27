@@ -1,5 +1,17 @@
 "use client";
 
+type ConversationAIResponse = {
+  mode: "native" | "target";
+  translated_sentence?: string;
+  original_sentence?: string;
+  corrected_sentence?: string;
+  correction_explanation?: string;
+  pronunciation_praise: string;
+  next_question_target: string;
+  next_question_native?: string;
+  pron_native: string;
+  };
+
 declare global {
   interface Window {
     SpeechRecognition: any;
@@ -7,35 +19,9 @@ declare global {
   }
 }
 
-type SpeechRecognition = any;
-
 import { useEffect, useRef, useState } from "react";
 
-function normalizeForCompare(text: string) {
-  return text
-    ?.toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
-    .replace(/[^a-zA-Z가-힣0-9]/g, "") // 문자/숫자만 남기기
-    .trim();
-}
-
-function calcSimilarity(a: string, b: string) {
-  const s1 = normalizeForCompare(a);
-  const s2 = normalizeForCompare(b);
-  if (!s1 || !s2) return 0;
-
-  const minLen = Math.min(s1.length, s2.length);
-  const maxLen = Math.max(s1.length, s2.length);
-  let same = 0;
-
-  for (let i = 0; i < minLen; i++) {
-    if (s1[i] === s2[i]) same++;
-  }
-
-  return same / maxLen;
-}
+type SpeechRecognition = any;
 
 type Language = {
   code: string;
@@ -80,13 +66,48 @@ const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
 };
 
 const LABEL_NATIVE_PROMPT: Record<string, string> = {
-  ko: "모국어로 편하게 대답해보세요",
-  en: "Answer comfortably in your native language",
-  fr: "Répondez librement dans votre langue maternelle",
-  es: "Responde cómodamente en tu lengua materna",
-  ru: "Отвечайте свободно на своём родном языке",
+  ko: "편하게 대답해보세요",
+  en: "Answer comfortably",
+  fr: "Répondez librement",
+  es: "Responde cómodamente",
+  ru: "Отвечайте свободно",
 };
 
+// ───────────── 발음 비교 유틸 (threshold 0.5) ─────────────
+function normalizeForCompare(text: string) {
+  return text
+    ?.toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // 악센트 제거
+    .replace(/[^a-zA-Z가-힣0-9]/g, "") // 문자/숫자만
+    .trim();
+}
+
+function calcSimilarity(a: string, b: string) {
+  const s1 = normalizeForCompare(a);
+  const s2 = normalizeForCompare(b);
+  if (!s1 || !s2) return 0;
+
+  const minLen = Math.min(s1.length, s2.length);
+  const maxLen = Math.max(s1.length, s2.length);
+  let same = 0;
+
+  for (let i = 0; i < minLen; i++) {
+    if (s1[i] === s2[i]) same++;
+  }
+
+  return same / maxLen;
+}
+
+function isPronunciationCloseEnough(spoken: string, expected: string) {
+  if (!spoken || !expected) return false;
+  const similarity = calcSimilarity(spoken, expected);
+  // 🔧 여기서 정확도 조절: 0.5 (요청값)
+  return similarity >= 0.5;
+}
+
+// ───────────── UI 텍스트 (모국어별) ─────────────
 type UiTexts = {
   setupTitle: string;
   setupSubtitle: string;
@@ -111,6 +132,9 @@ type UiTexts = {
   repeatQuestTitle: string;
   repeatQuestButton: string;
   repeatQuestDone: string;
+  answerLangLabel: string;
+  answerNativeSuffix: string;
+  answerTargetSuffix: string;
 };
 
 const UI_TEXTS: Record<string, UiTexts> = {
@@ -128,7 +152,7 @@ const UI_TEXTS: Record<string, UiTexts> = {
     speakButtonActive: "말하기 멈추기",
     typeInsteadHint: "또는 아래 칸에 직접 적어도 됩니다.",
     inputPlaceholder:
-      "여기에 모국어로 한두 문장을 적거나, 말하기 버튼을 눌러 보세요.",
+      "여기에 한두 문장을 적거나, 말하기 버튼을 눌러 보세요.",
     generateButtonIdle: "외국어 문장 만들어 보기",
     generateButtonLoading: "외국어 문장 만드는 중...",
     foreignSentenceLabel: "외국어 문장",
@@ -140,6 +164,9 @@ const UI_TEXTS: Record<string, UiTexts> = {
     repeatQuestTitle: "이 문장을 소리 내어 3번 따라 읽어 보세요.",
     repeatQuestButton: "🎤 마이크로 따라 읽기",
     repeatQuestDone: "3번 모두 읽었습니다! 잘하셨어요. 🎉",
+    answerLangLabel: "어떤 언어로 대답할까요?",
+    answerNativeSuffix: "(모국어)",
+    answerTargetSuffix: "(목표 언어)",
   },
   en: {
     setupTitle: "Speak a foreign language, starting from your native one",
@@ -148,25 +175,29 @@ const UI_TEXTS: Record<string, UiTexts> = {
     nativeLabel: "Native language",
     targetLabel: "Target language",
     setsQuestion: "How many sets do you want to practice today?",
-    setInfo: "1 set ≈ 1 question + answer + foreign sentence practice",
+    setInfo:
+      "1 set ≈ 1 question + answer + practice with the foreign sentence",
     startPractice: "Start practice",
     practiceQuestionTitle: "Question",
     speakButtonIdle: "🎤 Speak to fill in",
     speakButtonActive: "Stop speaking",
     typeInsteadHint: "Or type directly in the box below.",
     inputPlaceholder:
-      "Say a sentence in your native language, or type one here.",
+      "Say a sentence in the selected language, or type one here.",
     generateButtonIdle: "Generate a foreign sentence",
     generateButtonLoading: "Generating a foreign sentence...",
     foreignSentenceLabel: "Foreign sentence",
     listenButton: "🔊 Listen",
-    nativePronLabel: "Pronunciation in your native language",
+    nativePronLabel: "Pronunciation in your language",
     doneMessage: "You’ve finished today’s practice. Well done!",
     backToSetup: "Change languages / sets",
     nextSet: "Next set →",
     repeatQuestTitle: "Read this sentence aloud three times.",
     repeatQuestButton: "🎤 Repeat with the mic",
     repeatQuestDone: "You read it three times! Great job. 🎉",
+    answerLangLabel: "In which language will you answer?",
+    answerNativeSuffix: "(native)",
+    answerTargetSuffix: "(target)",
   },
   fr: {
     setupTitle:
@@ -184,13 +215,15 @@ const UI_TEXTS: Record<string, UiTexts> = {
     speakButtonActive: "Arrêter de parler",
     typeInsteadHint: "Ou écris directement dans la zone ci-dessous.",
     inputPlaceholder:
-      "Dis une phrase dans ta langue maternelle, ou écris-en une ici.",
+      "Dis une phrase dans la langue choisie, ou écris-en une ici.",
     generateButtonIdle: "Créer une phrase en langue étrangère",
-    generateButtonLoading: "Création de la phrase en langue étrangère...",
+    generateButtonLoading:
+      "Création de la phrase en langue étrangère...",
     foreignSentenceLabel: "Phrase en langue étrangère",
     listenButton: "🔊 Écouter",
-    nativePronLabel: "Prononciation dans ta langue maternelle",
-    doneMessage: "Tu as terminé ta pratique pour aujourd’hui. Bravo !",
+    nativePronLabel: "Prononciation dans ta langue",
+    doneMessage:
+      "Tu as terminé ta pratique pour aujourd’hui. Bravo !",
     backToSetup: "Changer les langues / séries",
     nextSet: "Série suivante →",
     repeatQuestTitle:
@@ -198,6 +231,9 @@ const UI_TEXTS: Record<string, UiTexts> = {
     repeatQuestButton: "🎤 Répéter avec le micro",
     repeatQuestDone:
       "Tu l’as lue trois fois ! Bravo. 🎉",
+    answerLangLabel: "Dans quelle langue veux-tu répondre ?",
+    answerNativeSuffix: "(langue maternelle)",
+    answerTargetSuffix: "(langue cible)",
   },
   es: {
     setupTitle:
@@ -215,13 +251,13 @@ const UI_TEXTS: Record<string, UiTexts> = {
     speakButtonActive: "Dejar de hablar",
     typeInsteadHint: "O escribe directamente en el cuadro de abajo.",
     inputPlaceholder:
-      "Di una frase en tu lengua materna o escríbela aquí.",
+      "Di una frase en el idioma elegido o escríbela aquí.",
     generateButtonIdle: "Crear una frase en idioma extranjero",
     generateButtonLoading:
       "Creando una frase en idioma extranjero...",
     foreignSentenceLabel: "Frase en idioma extranjero",
     listenButton: "🔊 Escuchar",
-    nativePronLabel: "Pronunciación en tu lengua materna",
+    nativePronLabel: "Pronunciación en tu idioma",
     doneMessage:
       "Has terminado la práctica de hoy. ¡Buen trabajo!",
     backToSetup: "Cambiar lenguas / series",
@@ -231,6 +267,9 @@ const UI_TEXTS: Record<string, UiTexts> = {
     repeatQuestButton: "🎤 Repetir con el micrófono",
     repeatQuestDone:
       "¡La leíste tres veces! Muy bien. 🎉",
+    answerLangLabel: "¿En qué idioma vas a responder?",
+    answerNativeSuffix: "(lengua materna)",
+    answerTargetSuffix: "(idioma meta)",
   },
   ru: {
     setupTitle:
@@ -249,13 +288,13 @@ const UI_TEXTS: Record<string, UiTexts> = {
     speakButtonActive: "Закончить говорить",
     typeInsteadHint: "Или напиши прямо в поле ниже.",
     inputPlaceholder:
-      "Скажи фразу на своём родном языке или напиши её здесь.",
+      "Произнеси или напиши фразу на выбранном языке.",
     generateButtonIdle: "Создать фразу на иностранном языке",
     generateButtonLoading:
       "Создаю фразу на иностранном языке...",
     foreignSentenceLabel: "Фраза на иностранном языке",
     listenButton: "🔊 Прослушать",
-    nativePronLabel: "Произношение на родном языке",
+    nativePronLabel: "Произношение на твоём языке",
     doneMessage:
       "Ты завершил(а) тренировку на сегодня. Отличная работа!",
     backToSetup: "Изменить языки / количество сетов",
@@ -265,106 +304,89 @@ const UI_TEXTS: Record<string, UiTexts> = {
     repeatQuestButton: "🎤 Повторить через микрофон",
     repeatQuestDone:
       "Ты прочитал(а) её три раза! Отличная работа. 🎉",
+    answerLangLabel: "На каком языке ты будешь отвечать?",
+    answerNativeSuffix: "(родной)",
+    answerTargetSuffix: "(целевой)",
   },
 };
 
 type Step = "choose-native" | "setup" | "practice";
+type AnswerLangMode = "native" | "target";
 
 function base64ToBlob(base64: string, mimeType: string) {
   const byteChars = atob(base64);
-  const byteNumbers = new Array(byteChars.length);
-
-  for (let i = 0; i < byteChars.length; i++) {
-    byteNumbers[i] = byteChars.charCodeAt(i);
-  }
-
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
-}
-
-function isPronunciationCloseEnough(spoken: string, expected: string) {
-  // 위에 정의한 calcSimilarity 재사용
-  const score = calcSimilarity(spoken, expected);
-
-  // 0.0 ~ 1.0 중에서, 0.55 이상이면 “비슷하게 읽었다”로 인정
-  // (너무 빡세면 0.5로 낮춰도 됨)
-  return score >= 0.55;
+  const bytes = new Uint8Array([...byteChars].map((c) => c.charCodeAt(0)));
+  return new Blob([bytes], { type: mimeType });
 }
 
 export default function Home() {
-  const [nativeLang, setNativeLang] = useState<string>("ko");
-  const [targetLang, setTargetLang] = useState<string>("en");
-  const [sets, setSets] = useState<number>(2);
+  const [nativeLang, setNativeLang] = useState("ko");
+  const [targetLang, setTargetLang] = useState("en");
+  const [answerLang, setAnswerLang] =
+    useState<AnswerLangMode>("native");
+  const [sets, setSets] = useState(2);
+
+  const [step, setStep] = useState<Step>("choose-native");
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const [inputText, setInputText] = useState("");
+  const [foreignText, setForeignText] = useState("");
+  const [foreignPronNative, setForeignPronNative] = useState("");
+
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const isListeningRef = useRef(false);
+
+  const [isRepeatListening, setIsRepeatListening] = useState(false);
+  const repeatRecognitionRef =
+    useRef<SpeechRecognition | null>(null);
+  const [repeatCount, setRepeatCount] = useState(0);
+
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const questions =
     QUESTIONS_BY_NATIVE[nativeLang] ?? QUESTIONS_BY_NATIVE["ko"];
 
-  const [step, setStep] = useState<Step>("choose-native");
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-
-  const [nativeText, setNativeText] = useState<string>("");
-  const [foreignText, setForeignText] = useState<string>("");
-  const [foreignPronNative, setForeignPronNative] = useState<string>("");
-
-  const [repeatCount, setRepeatCount] = useState<number>(0);
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
-
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const isListeningRef = useRef<boolean>(false);
-
-  const [isRepeatListening, setIsRepeatListening] =
-    useState<boolean>(false);
-  const repeatRecognitionRef =
-    useRef<SpeechRecognition | null>(null);
-
-  const availableTargets = LANGUAGES.filter(
-    (lang) => lang.code !== nativeLang
-  );
-
   const texts = UI_TEXTS[nativeLang] ?? UI_TEXTS["en"];
 
-  const handleNativeChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const newNative = e.target.value;
+  const updateNativeLang = (newNative: string) => {
     setNativeLang(newNative);
-    const firstTarget = LANGUAGES.find((l) => l.code !== newNative);
-    if (firstTarget) setTargetLang(firstTarget.code);
+    // 모국어와 목표 언어가 같아지는 상황 방지
+    if (newNative === targetLang) {
+      const firstOther = LANGUAGES.find(
+        (l) => l.code !== newNative
+      );
+      if (firstOther) setTargetLang(firstOther.code);
+    }
   };
 
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
+  const [aiResult, setAiResult] =
+  useState<ConversationAIResponse | null>(null);
 
-  // 음성 인식 (모국어 입력용) - 내가 멈출 때까지 계속
+  // ────────── 1) 말해서 입력용 음성 인식 ──────────
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SR) {
-      console.warn("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
-      return;
-    }
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
 
     const recog: SpeechRecognition = new SR();
-    const langConfig = LANGUAGES.find((l) => l.code === nativeLang);
-    recog.lang = langConfig ? langConfig.ttsLang : "ko-KR";
+    const answerCode =
+      answerLang === "native" ? nativeLang : targetLang;
+    const langConfig = LANGUAGES.find(
+      (l) => l.code === answerCode
+    );
 
+    recog.lang = langConfig ? langConfig.ttsLang : "ko-KR";
     recog.continuous = true;
     recog.interimResults = false;
 
-    recog.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setNativeText(transcript);
+    recog.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      setInputText(transcript);
     };
 
-    recog.onerror = () => {
-      setIsListening(false);
-    };
+    recog.onerror = () => setIsListening(false);
 
     recog.onend = () => {
       if (isListeningRef.current) {
@@ -385,29 +407,58 @@ export default function Home() {
         // ignore
       }
     };
-  }, [nativeLang]);
+  }, [nativeLang, targetLang, answerLang]);
 
-  // 음성 인식 (3번 따라 읽기용, 목표 언어로 인식)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SR) {
-      console.warn("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
+  const handleMicToggle = () => {
+    if (!recognitionRef.current) {
+      alert("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
       return;
     }
 
+    if (!isListening) {
+      if (isListeningRef.current) return;
+      setInputText("");
+      setForeignText("");
+      setForeignPronNative("");
+      setRepeatCount(0);
+
+      isListeningRef.current = true;
+      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error("SpeechRecognition start error:", err);
+        isListeningRef.current = false;
+        setIsListening(false);
+      }
+    } else {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      isListeningRef.current = false;
+      setIsListening(false);
+    }
+  };
+
+  // ────────── 2) 3번 따라 읽기용 음성 인식 ──────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SR =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+
     const recog: SpeechRecognition = new SR();
-    const langConfig = LANGUAGES.find((l) => l.code === targetLang);
+    const langConfig = LANGUAGES.find(
+      (l) => l.code === targetLang
+    );
     recog.lang = langConfig ? langConfig.ttsLang : "en-US";
     recog.continuous = false;
     recog.interimResults = false;
 
-    recog.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript || "";
+    recog.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript || "";
       const ok = isPronunciationCloseEnough(
         transcript,
         foreignText
@@ -423,13 +474,8 @@ export default function Home() {
       setIsRepeatListening(false);
     };
 
-    recog.onerror = () => {
-      setIsRepeatListening(false);
-    };
-
-    recog.onend = () => {
-      setIsRepeatListening(false);
-    };
+    recog.onerror = () => setIsRepeatListening(false);
+    recog.onend = () => setIsRepeatListening(false);
 
     repeatRecognitionRef.current = recog;
 
@@ -441,58 +487,6 @@ export default function Home() {
       }
     };
   }, [targetLang, foreignText]);
-
-  const resetForeignOutputs = () => {
-    setForeignText("");
-    setForeignPronNative("");
-    setRepeatCount(0);
-  };
-
-  const startPractice = () => {
-    setStep("practice");
-    setCurrentIndex(0);
-    setNativeText("");
-    resetForeignOutputs();
-  };
-
-  const handleMicToggle = () => {
-    if (!recognitionRef.current) {
-      alert("이 브라우저에서는 음성 인식이 지원되지 않습니다.");
-      return;
-    }
-
-    if (!isListening) {
-      if (isListeningRef.current) return;
-
-      setNativeText("");
-      resetForeignOutputs();
-      setIsListening(true);
-      try {
-        recognitionRef.current.start();
-      } catch (err: any) {
-        if (
-          !err ||
-          !err.message ||
-          !String(err.message).includes(
-            "recognition has already started"
-          )
-        ) {
-          console.error("SpeechRecognition start error:", err);
-          alert(
-            "음성 인식을 시작하는 중 오류가 발생했습니다."
-          );
-        }
-        setIsListening(false);
-      }
-    } else {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      setIsListening(false);
-    }
-  };
 
   const handleRepeatMic = () => {
     if (!foreignText.trim()) return;
@@ -511,43 +505,64 @@ export default function Home() {
     }
   };
 
-  const generateForeign = async () => {
-    if (!nativeText.trim()) {
-      alert("먼저 모국어로 한 문장을 말하거나 적어주세요.");
+  const resetForeignOutputs = () => {
+    setForeignText("");
+    setForeignPronNative("");
+    setRepeatCount(0);
+    setAiResult(null); 
+  };
+
+  // ────────── 3) 외국어 문장 생성 + 대화 파트너 응답 ──────────
+const generateForeign = async () => {
+  if (!inputText.trim()) {
+    alert("먼저 말하거나 적어 주세요.");
+    return;
+  }
+
+  try {
+    setIsGenerating(true);
+    resetForeignOutputs();
+
+    const res = await fetch("/api/conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+  mode: answerLang,
+  nativeLanguage: nativeLang,   // 고친 곳
+  targetLanguage: targetLang,   // 고친 곳
+  userMessage: inputText,
+}),
+    });
+
+    if (!res.ok) {
+      console.error("API error", await res.text());
+      alert("대화 응답을 가져오는 중 오류가 발생했습니다.");
       return;
     }
 
-    try {
-      setIsGenerating(true);
-      resetForeignOutputs();
+    const data: ConversationAIResponse = await res.json();
+    setAiResult(data);
 
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nativeText,
-          nativeLang,
-          targetLang,
-        }),
-      });
-
-      if (!res.ok) {
-        console.error("API error", await res.text());
-        alert("외국어 문장을 생성하는 중 오류가 발생했습니다.");
-        return;
-      }
-
-      const data = await res.json();
-      setForeignText(data.sentence || "");
-      setForeignPronNative(data.pron_native || "");
-    } catch (e) {
-      console.error(e);
-      alert("네트워크 오류가 발생했습니다.");
-    } finally {
-      setIsGenerating(false);
+    // 외국어 문장 표시
+    if (data.mode === "native" && data.translated_sentence) {
+      setForeignText(data.translated_sentence);
+    } else if (data.mode === "target" && data.corrected_sentence) {
+      setForeignText(data.corrected_sentence);
     }
-  };
 
+    // 발음 표시
+    setForeignPronNative(data.pron_native || "");
+
+  } catch (e) {
+    console.error(e);
+    alert("네트워크 오류가 발생했습니다.");
+  } finally {
+    setIsGenerating(false);
+  }
+};
+
+
+  // ────────── 4) TTS 재생 ──────────
   const playTTS = async () => {
     if (!foreignText.trim()) return;
 
@@ -573,14 +588,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      const base64 = data.audioContent as string;
-
-      if (!base64) {
-        alert("TTS 응답에 음성 데이터가 없습니다.");
-        return;
-      }
-
-      const blob = base64ToBlob(base64, "audio/mpeg");
+      const blob = base64ToBlob(data.audioContent, "audio/mpeg");
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.onended = () => URL.revokeObjectURL(url);
@@ -596,16 +604,16 @@ export default function Home() {
     if (nextIndex >= Math.min(sets, questions.length)) {
       alert(texts.doneMessage);
       setStep("setup");
-      setNativeText("");
+      setInputText("");
       resetForeignOutputs();
       return;
     }
     setCurrentIndex(nextIndex);
-    setNativeText("");
+    setInputText("");
     resetForeignOutputs();
   };
 
-  // 1단계: 모국어 선택
+  // ────────── 화면 1: 모국어 선택 ──────────
   if (step === "choose-native") {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -624,7 +632,7 @@ export default function Home() {
             </label>
             <select
               value={nativeLang}
-              onChange={handleNativeChange}
+              onChange={(e) => updateNativeLang(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             >
               {LANGUAGES.map((lang) => (
@@ -647,8 +655,12 @@ export default function Home() {
     );
   }
 
-  // 2단계: 언어/세트 설정
+  // ────────── 화면 2: 언어 / 세트 설정 ──────────
   if (step === "setup") {
+    const availableTargets = LANGUAGES.filter(
+      (l) => l.code !== nativeLang
+    );
+
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
         <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-xl">
@@ -665,7 +677,7 @@ export default function Home() {
             </label>
             <select
               value={nativeLang}
-              onChange={handleNativeChange}
+              onChange={(e) => updateNativeLang(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             >
               {LANGUAGES.map((lang) => (
@@ -720,7 +732,12 @@ export default function Home() {
 
           <button
             type="button"
-            onClick={startPractice}
+            onClick={() => {
+              setStep("practice");
+              setCurrentIndex(0);
+              setInputText("");
+              resetForeignOutputs();
+            }}
             className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
           >
             {texts.startPractice}
@@ -730,148 +747,212 @@ export default function Home() {
     );
   }
 
-  // 3단계: 연습 화면
-  if (step === "practice") {
-    const q = questions[currentIndex] ?? questions[0];
+  // ────────── 화면 3: 실제 연습 ──────────
+  const q = questions[currentIndex] ?? questions[0];
 
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-        <div className="w-full max-w-xl rounded-2xl bg-white p-7 shadow-xl">
-          <p className="mb-1 text-xs text-gray-500">
-            세트 {currentIndex + 1} / {sets}
-          </p>
-          <h2 className="mb-3 text-2xl font-bold">
-            {texts.practiceQuestionTitle}
-          </h2>
-          <p className="mb-4 rounded-xl bg-gray-100 p-3 text-sm">
-            {q}
-          </p>
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+      <div className="w-full max-w-xl rounded-2xl bg-white p-7 shadow-xl">
+        <p className="mb-1 text-xs text-gray-500">
+          세트 {currentIndex + 1} / {sets}
+        </p>
+        <h2 className="mb-3 text-2xl font-bold">
+          {texts.practiceQuestionTitle}
+        </h2>
+        <p className="mb-4 rounded-xl bg-gray-100 p-3 text-sm">
+          {q}
+        </p>
 
-          <div className="mb-4">
-            <label className="mb-2 block font-semibold">
-              {LABEL_NATIVE_PROMPT[nativeLang]}
-              <span className="ml-1 text-xs text-gray-500">
-                (
-                {LANGUAGES.find((l) => l.code === nativeLang)
-                  ?.label || "모국어"}
-                )
-              </span>
-            </label>
-            <div className="mb-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleMicToggle}
-                className={`rounded-full px-4 py-2 text-sm font-semibold text-white ${
-                  isListening ? "bg-red-500" : "bg-gray-900"
-                }`}
-              >
-                {isListening
-                  ? texts.speakButtonActive
-                  : texts.speakButtonIdle}
-              </button>
-              <span className="pt-1 text-xs text-gray-500">
-                {texts.typeInsteadHint}
-              </span>
-            </div>
-            <textarea
-              value={nativeText}
-              onChange={(e) => setNativeText(e.target.value)}
-              rows={3}
-              className="w-full resize-y rounded-xl border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none"
-              placeholder={texts.inputPlaceholder}
-            />
-          </div>
-
-          <div className="mb-4">
-            <button
-              type="button"
-              onClick={generateForeign}
-              disabled={isGenerating}
-              className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-70"
-            >
-              {isGenerating
-                ? texts.generateButtonLoading
-                : texts.generateButtonIdle}
-            </button>
-          </div>
-
-          {foreignText && (
-            <div className="mb-4 rounded-xl bg-indigo-50 p-3 text-sm">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="font-semibold">
-                  {texts.foreignSentenceLabel}
-                </span>
-                <button
-                  type="button"
-                  onClick={playTTS}
-                  className="rounded-full bg-indigo-600 px-3 py-1 text-xs text-white"
-                >
-                  {texts.listenButton}
-                </button>
-              </div>
-
-              <p className="mb-1">{foreignText}</p>
-
-              {foreignPronNative && (
-                <p className="mt-1 text-xs text-gray-800">
-                  <strong>{texts.nativePronLabel}:</strong>{" "}
-                  {foreignPronNative}
-                </p>
-              )}
-
-              {/* 3회 반복 낭독 퀘스트 */}
-              <div className="mt-3 rounded-lg bg-white/70 p-3 text-xs text-gray-800">
-                <p className="mb-1 font-semibold">
-                  {texts.repeatQuestTitle}
-                </p>
-                <p className="mb-2">
-                  {repeatCount} / 3
-                </p>
-
-                {repeatCount < 3 ? (
-                  <button
-                    type="button"
-                    onClick={handleRepeatMic}
-                    className="rounded-full border border-indigo-500 px-3 py-1 text-xs font-semibold text-indigo-600 bg-white disabled:opacity-60"
-                    disabled={isRepeatListening}
-                  >
-                    {isRepeatListening
-                      ? "🎤 듣는 중..."
-                      : texts.repeatQuestButton}
-                  </button>
-                ) : (
-                  <p className="mt-1 font-semibold text-emerald-600">
-                    {texts.repeatQuestDone}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setStep("setup");
-                setNativeText("");
-                resetForeignOutputs();
-              }}
-              className="flex-1 rounded-full border border-gray-300 px-4 py-2 text-sm"
-            >
-              {texts.backToSetup}
-            </button>
-            <button
-              type="button"
-              onClick={goNext}
-              className="flex-1 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white"
-            >
-              {texts.nextSet}
-            </button>
-          </div>
+        {/* 답변 언어 선택 */}
+        <div className="mb-3">
+          <label className="mb-1 block text-sm font-semibold">
+            {texts.answerLangLabel}
+          </label>
+          <select
+            value={answerLang}
+            onChange={(e) =>
+              setAnswerLang(e.target.value as AnswerLangMode)
+            }
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
+            <option value="native">
+              {
+                LANGUAGES.find((l) => l.code === nativeLang)
+                  ?.label
+              }{" "}
+              {texts.answerNativeSuffix}
+            </option>
+            <option value="target">
+              {
+                LANGUAGES.find((l) => l.code === targetLang)
+                  ?.label
+              }{" "}
+              {texts.answerTargetSuffix}
+            </option>
+          </select>
         </div>
-      </main>
-    );
-  }
 
-  return null;
+        <div className="mb-4">
+          <label className="mb-2 block font-semibold">
+            {LABEL_NATIVE_PROMPT[nativeLang]}
+          </label>
+
+          {/* 말해서 입력하기 버튼 (1개) */}
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleMicToggle}
+              className={`rounded-full px-4 py-2 text-sm font-semibold text-white ${
+                isListening ? "bg-red-500" : "bg-gray-900"
+              }`}
+            >
+              {isListening
+                ? texts.speakButtonActive
+                : texts.speakButtonIdle}
+            </button>
+            <span className="pt-1 text-xs text-gray-500">
+              {texts.typeInsteadHint}
+            </span>
+          </div>
+
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            rows={3}
+            className="w-full resize-y rounded-xl border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none"
+            placeholder={texts.inputPlaceholder}
+          />
+        </div>
+
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={generateForeign}
+            disabled={isGenerating}
+            className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-70"
+          >
+            {isGenerating
+              ? texts.generateButtonLoading
+              : texts.generateButtonIdle}
+          </button>
+        </div>
+
+ {foreignText && (
+  <div className="mb-4 rounded-xl bg-indigo-50 p-3 text-sm">
+    <div className="mb-2 flex items-center justify-between">
+      <span className="font-semibold">
+        {texts.foreignSentenceLabel}
+      </span>
+      <button
+        type="button"
+        onClick={playTTS}
+        className="rounded-full bg-indigo-600 px-3 py-1 text-xs text-white"
+      >
+        {texts.listenButton}
+      </button>
+    </div>
+
+    <p className="mb-1">{foreignText}</p>
+
+    {foreignPronNative && (
+      <p className="mt-1 text-xs text-gray-800">
+        <strong>{texts.nativePronLabel}:</strong>{" "}
+        {foreignPronNative}
+      </p>
+    )}
+
+    {/* 3회 반복 낭독 퀘스트 */}
+    <div className="mt-3 rounded-lg bg-white/70 p-3 text-xs text-gray-800">
+      <p className="mb-1 font-semibold">{texts.repeatQuestTitle}</p>
+      <p className="mb-2">{repeatCount} / 3</p>
+
+      {repeatCount < 3 ? (
+        <button
+          type="button"
+          onClick={handleRepeatMic}
+          className="rounded-full border border-indigo-500 px-3 py-1 text-xs font-semibold text-indigo-600 bg-white disabled:opacity-60"
+          disabled={isRepeatListening}
+        >
+          {isRepeatListening ? "🎤 듣는 중..." : texts.repeatQuestButton}
+        </button>
+      ) : (
+        <p className="mt-1 font-semibold text-emerald-600">
+          {texts.repeatQuestDone}
+        </p>
+      )}
+    </div>
+  </div>
+)}
+
+{aiResult && (
+  <div className="mb-4 space-y-3 rounded-xl bg-yellow-50 p-4 text-sm text-gray-800">
+    
+    {/* 목표어 대답 → 교정 & 설명 */}
+    {aiResult.mode === "target" && (
+      <>
+        {aiResult.original_sentence && (
+          <div className="rounded-md bg-white p-2">
+            <div className="font-semibold mb-1">내 문장</div>
+            <div>{aiResult.original_sentence}</div>
+          </div>
+        )}
+
+        {aiResult.corrected_sentence && (
+          <div className="rounded-md bg-white p-2">
+            <div className="font-semibold mb-1">교정된 문장</div>
+            <div>{aiResult.corrected_sentence}</div>
+          </div>
+        )}
+
+        {aiResult.correction_explanation && (
+          <div className="rounded-md bg-yellow-100 p-2">
+            {aiResult.correction_explanation}
+          </div>
+        )}
+      </>
+    )}
+
+    {/* 발음 칭찬 */}
+    <div className="rounded-md bg-emerald-50 p-2">
+      <div className="font-semibold mb-1">발음 피드백</div>
+      <div>{aiResult.pronunciation_praise}</div>
+    </div>
+
+    {/* 다음 질문 */}
+    <div className="rounded-md bg-blue-50 p-2">
+      <div className="font-semibold mb-1">다음 질문</div>
+      <div className="text-base">{aiResult.next_question_target}</div>
+      {aiResult.next_question_native && (
+        <div className="mt-1 text-xs text-gray-600">
+          ({aiResult.next_question_native})
+        </div>
+      )}
+    </div>
+
+  </div>
+)}
+
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setStep("setup");
+              setInputText("");
+              resetForeignOutputs();
+            }}
+            className="flex-1 rounded-full border border-gray-300 px-4 py-2 text-sm"
+          >
+            {texts.backToSetup}
+          </button>
+          <button
+            type="button"
+            onClick={goNext}
+            className="flex-1 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            {texts.nextSet}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
 }
