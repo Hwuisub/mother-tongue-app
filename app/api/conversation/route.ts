@@ -19,8 +19,29 @@ ABSOLUTE RULES FOR pron_native
   - ko → Hangul only (예: "아이 웬트 투 워크")
   - en / es / fr → Latin alphabet
   - ru → Cyrillic
-- pron_native MUST NOT include translation, grammar notes, quotes, brackets, IPA, or extra text.
-  ONLY phonetic transcription of the FOREIGN sentence.
+pron_native MUST NOT include translation, grammar notes, quotes, brackets, IPA, or any extra text.
+pron_native MUST be ONLY the phonetic transcription of the FOREIGN sentence.
+
+If targetLanguage = "es" AND nativeLanguage = "ko":
+pron_native MUST be written as natural Korean Hangul phonetic transcription of Spanish sounds.
+NEVER copy the Spanish sentence itself.
+Required phonetic style examples:
+  me → 메
+  le → 레
+  van → 반 / 빤
+  té / te → 떼 / 테 (강세 받으면 떼)
+  fue / fui → 푸에 / 푸이
+  baño → 바뇨
+  pero → 페로
+  tuve → 투베
+  diarrea → 디아레아
+Examples of full-sentence transcription style:
+  “¿Cómo estás?” → “꼬모 에스따스”
+  “Gracias” → “그라씨아스”
+  “Mucho gusto” → “무초 구스토”
+  “Hoy fue un día difícil” → “오이 푸에 운 디아 디피씰”
+GPT MUST apply the same Hangul-style phonetic transcription to ANY Spanish sentence.
+pron_native MUST look like something written by an average Korean speaker who wants to read Spanish out loud naturally.
 
 ====================================================
 PRONUNCIATION PRAISE
@@ -81,6 +102,11 @@ Example:
 Foreign sentence: "나는 병원에 갔어요."
 VALID pron_native: "na-neun byeong-won-e ga-sseo-yo"
 INVALID pron_native: "나는 병원에 갔어요", "나눈 병원에 갔어요", "나는 병원에 갔어"
+-- HARD RULE ABOUT pron_native (DO NOT BREAK) --
+If pron_native is not written using the user's nativeLanguage script, the entire response is considered INVALID.
+If pron_native repeats the foreign sentence as-is without phonetic transcription, the entire response is INVALID.
+pron_native MUST look like how a native speaker of the user's nativeLanguage would write the pronunciation to read it aloud naturally.
+Failure to follow this rule = DO NOT ANSWER. Try again inside valid JSON.
 `;
 
 export async function POST(req: NextRequest) {
