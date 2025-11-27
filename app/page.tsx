@@ -479,7 +479,7 @@ const generateForeign = async () => {
     setIsGenerating(true);
     resetForeignOutputs();
 
-    const res = await fetch("/api/conversation", {
+   const res = await fetch(`/api/conversation`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -489,7 +489,6 @@ const generateForeign = async () => {
     userMessage: inputText,
   }),
 });
-
 
     if (!res.ok) {
       console.error("API error", await res.text());
