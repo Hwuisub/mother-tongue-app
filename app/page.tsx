@@ -479,7 +479,7 @@ const generateForeign = async () => {
     setIsGenerating(true);
     resetForeignOutputs();
 
-    const res = await fetch(`${window.location.origin}/api/conversation`, {
+    const res = await fetch("/api/conversation", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
