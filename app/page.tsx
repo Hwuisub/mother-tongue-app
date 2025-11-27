@@ -479,16 +479,17 @@ const generateForeign = async () => {
     setIsGenerating(true);
     resetForeignOutputs();
 
-    const res = await fetch("/api/conversation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-  mode: answerLang,
-  nativeLanguage: nativeLang,   // 고친 곳
-  targetLanguage: targetLang,   // 고친 곳
-  userMessage: inputText,
-}),
-    });
+    const res = await fetch(`${window.location.origin}/api/conversation`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    mode: answerLang.includes("모국어") || answerLang.includes("native") ? "native" : "target",
+    nativeLanguage: nativeLang,
+    targetLanguage: targetLang,
+    userMessage: inputText,
+  }),
+});
+
 
     if (!res.ok) {
       console.error("API error", await res.text());
@@ -507,7 +508,14 @@ const generateForeign = async () => {
     }
 
     // 발음 표시
-    setForeignPronNative(data.pron_native || "");
+    const safePronNative =
+  typeof data.pron_native === "string" &&
+  data.pron_native.trim().length > 0 &&
+  data.pron_native !== "undefined"
+    ? data.pron_native
+    : "";
+
+setForeignPronNative(safePronNative);
 
   } catch (e) {
     console.error(e);

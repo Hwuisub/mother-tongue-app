@@ -43,6 +43,12 @@ Examples of full-sentence transcription style:
 GPT MUST apply the same Hangul-style phonetic transcription to ANY Spanish sentence.
 pron_native MUST look like something written by an average Korean speaker who wants to read Spanish out loud naturally.
 
+❗️If pron_native violates any rule, YOU MUST FIX IT yourself. Do not return the Spanish sentence itself as Hangul, always return phonetic transcription only.
+
+FOREIGN sentence = translated_sentence when mode = "native".
+FOREIGN sentence = corrected_sentence when mode = "target".
+pron_native MUST ALWAYS be the phonetic transcription of the FOREIGN sentence ONLY — NEVER the user's original sentence.
+
 ====================================================
 PRONUNCIATION PRAISE
 ====================================================
