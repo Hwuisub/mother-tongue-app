@@ -22,6 +22,7 @@ ABSOLUTE RULES FOR pron_native
 pron_native MUST NOT include translation, grammar notes, quotes, brackets, IPA, or any extra text.
 pron_native MUST be ONLY the phonetic transcription of the FOREIGN sentence.
 
+If targetLanguage = "en" AND nativeLanguage = "ko", pron_native MUST be written in Hangul only (예: "I was upset" → "아이 워즈 업셋").
 If targetLanguage = "es" AND nativeLanguage = "ko":
 pron_native MUST be written as natural Korean Hangul phonetic transcription of Spanish sounds.
 NEVER copy the Spanish sentence itself.
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    if (!openaiRes.ok) {
+        if (!openaiRes.ok) {
       const errText = await openaiRes.text();
       console.error("🔴 RAW OpenAI ERROR =>", errText);
       return NextResponse.json(
@@ -168,9 +169,23 @@ export async function POST(req: NextRequest) {
     const json = await openaiRes.json();
     const content = json.choices?.[0]?.message?.content;
 
-    const parsed = JSON.parse(content);
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (e) {
+      console.error("❌ JSON parse 실패, 원본 응답:", content);
+      return NextResponse.json(
+        { error: "INVALID_JSON", detail: content },
+        { status: 500 }
+      );
+    }
+
+    if (typeof parsed.pron_native !== "string") {
+      parsed.pron_native = "";
+    }
 
     return NextResponse.json(parsed);
+
   } catch (error) {
     console.error("Conversation API error:", error);
     return NextResponse.json(
@@ -179,3 +194,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
