@@ -291,6 +291,8 @@ export default function Home() {
   const [answerLang, setAnswerLang] =
     useState<AnswerLangMode>("native");
   const [sets, setSets] = useState(2);
+  const [difficulty, setDifficulty] = useState("B1");
+
 
   const [step, setStep] = useState<Step>("choose-native");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -298,6 +300,9 @@ export default function Home() {
   const [inputText, setInputText] = useState("");
   const [foreignText, setForeignText] = useState("");
   const [foreignPronNative, setForeignPronNative] = useState("");
+  const [currentQuestion, setCurrentQuestion] = useState("");
+  const [currentQuestionNative, setCurrentQuestionNative] = useState("");
+
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -326,8 +331,9 @@ export default function Home() {
     }
   };
 
-  const [aiResult, setAiResult] =
-  useState<ConversationAIResponse | null>(null);
+  const [aiResult, setAiResult] = useState<ConversationAIResponse | null>(null);
+  const [nextQuestionOverride, setNextQuestionOverride] = useState<string | null>(null);
+
 
   // ────────── 1) 말해서 입력용 음성 인식 ──────────
   useEffect(() => {
@@ -487,6 +493,7 @@ const generateForeign = async () => {
     nativeLanguage: nativeLang,
     targetLanguage: targetLang,
     userMessage: inputText,
+    
   }),
 });
 
@@ -498,6 +505,9 @@ const generateForeign = async () => {
 
     const data: ConversationAIResponse = await res.json();
     setAiResult(data);
+    if (data.next_question_target) {
+  setNextQuestionOverride(data.next_question_target);
+}
 
     // 외국어 문장 표시
     if (data.mode === "native" && data.translated_sentence) {
@@ -525,58 +535,109 @@ setForeignPronNative(safePronNative);
 };
 
 
-  // ────────── 4) TTS 재생 ──────────
-  const playTTS = async () => {
-    if (!foreignText.trim()) return;
+// ────────── 4) TTS 재생 ──────────
+const playTTS = async () => {
+  if (!foreignText.trim()) return;
 
-    try {
-      const langConfig = LANGUAGES.find(
-        (l) => l.code === targetLang
-      );
-      const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
+  try {
+    const langConfig = LANGUAGES.find((l) => l.code === targetLang);
+    const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
 
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: foreignText,
-          ttsLang,
-        }),
-      });
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: foreignText,
+        ttsLang,
+      }),
+    });
 
-      if (!res.ok) {
-        console.error("TTS API error:", await res.text());
-        alert("소리를 불러오는 중 오류가 발생했습니다.");
-        return;
-      }
-
-      const data = await res.json();
-      const blob = base64ToBlob(data.audioContent, "audio/mpeg");
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      audio.play();
-    } catch (e) {
-      console.error("TTS fetch error:", e);
+    if (!res.ok) {
+      console.error("TTS API error:", await res.text());
       alert("소리를 불러오는 중 오류가 발생했습니다.");
-    }
-  };
-
-  const goNext = () => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= Math.min(sets, questions.length)) {
-      alert(texts.doneMessage);
-      setStep("setup");
-      setInputText("");
-      resetForeignOutputs();
       return;
     }
-    setCurrentIndex(nextIndex);
-    setInputText("");
-    resetForeignOutputs();
-  };
 
-  // ────────── 화면 1: 모국어 선택 ──────────
+    const data = await res.json();
+    const blob = base64ToBlob(data.audioContent, "audio/mpeg");
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+
+    audio.onended = () => URL.revokeObjectURL(url);
+    audio.play();
+  } catch (e) {
+    console.error("TTS fetch error:", e);
+    alert("소리를 불러오는 중 오류가 발생했습니다.");
+  }
+};
+
+const playTTSSlow = async () => {
+  if (!foreignText.trim()) return;
+
+  try {
+    const langConfig = LANGUAGES.find((l) => l.code === targetLang);
+    const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
+
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: foreignText,
+        ttsLang,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("TTS API error:", await res.text());
+      alert("소리를 불러오는 중 오류가 발생했습니다.");
+      return;
+    }
+
+    const data = await res.json();
+    const blob = base64ToBlob(data.audioContent, "audio/mpeg");
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+
+    audio.playbackRate = 0.5; // 느리게
+    audio.onended = () => URL.revokeObjectURL(url);
+    audio.play();
+  } catch (e) {
+    console.error("TTS fetch error:", e);
+    alert("소리를 불러오는 중 오류가 발생했습니다.");
+  }
+};
+
+
+// ⬇ 이것부터는 원래 그대로 존재해야 하는 goNext
+const goNext = () => {
+  if (!aiResult?.next_question_target) {
+    alert("다음 질문을 받지 못했습니다.");
+    return;
+  }
+
+  const nextIndex = currentIndex + 1;
+
+  // 다음 질문을 화면 상단에 반영
+  setCurrentQuestion(aiResult.next_question_target);
+  setCurrentQuestionNative(aiResult.next_question_native || "");
+
+  // 모든 세트 완료
+  if (nextIndex >= sets) {
+    alert(texts.doneMessage);
+    setStep("setup");
+    setInputText("");
+    setNextQuestionOverride(null);
+    resetForeignOutputs();
+    return;
+  }
+
+  // 다음 세트로 이동
+  setCurrentIndex(nextIndex);
+  setInputText("");
+  resetForeignOutputs();
+};
+
+// ────────── 화면 1: 모국어 선택 ──────────
   if (step === "choose-native") {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -693,6 +754,26 @@ setForeignPronNative(safePronNative);
             </p>
           </div>
 
+          <div className="mb-6">
+  <label className="mb-2 block text-sm font-semibold">난이도</label>
+  <div className="flex gap-2">
+    {["쉬움", "보통", "B1", "B2"].map((level) => (
+      <button
+        key={level}
+        type="button"
+        onClick={() => setDifficulty(level)}
+        className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${
+          difficulty === level
+            ? "border-2 border-gray-900 bg-gray-900 text-white"
+            : "border border-gray-300 bg-white text-gray-900"
+        }`}
+      >
+        {level}
+      </button>
+    ))}
+  </div>
+</div>
+
           <button
             type="button"
             onClick={() => {
@@ -700,6 +781,7 @@ setForeignPronNative(safePronNative);
               setCurrentIndex(0);
               setInputText("");
               resetForeignOutputs();
+              setCurrentQuestion(questions[0]);
             }}
             className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
           >
@@ -711,20 +793,30 @@ setForeignPronNative(safePronNative);
   }
 
   // ────────── 화면 3: 실제 연습 ──────────
-  const q = questions[currentIndex] ?? questions[0];
+const q = currentQuestion || questions[currentIndex];
 
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-      <div className="w-full max-w-xl rounded-2xl bg-white p-7 shadow-xl">
-        <p className="mb-1 text-xs text-gray-500">
-          세트 {currentIndex + 1} / {sets}
-        </p>
-        <h2 className="mb-3 text-2xl font-bold">
-          {texts.practiceQuestionTitle}
-        </h2>
-        <p className="mb-4 rounded-xl bg-gray-100 p-3 text-sm">
-          {q}
-        </p>
+return (
+  <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+    <div className="w-full max-w-xl rounded-2xl bg-white p-7 shadow-xl">
+      <p className="mb-1 text-xs text-gray-500">
+        세트 {currentIndex + 1} / {sets}
+      </p>
+      <h2 className="mb-3 text-2xl font-bold">
+        {texts.practiceQuestionTitle}
+      </h2>
+
+      <div className="mb-4 rounded-xl bg-gray-100 p-3 text-sm">
+        {/* 메인 외국어 질문 */}
+        <p>{q}</p>
+
+        {/* 모국어 해석 표시 */}
+        {currentQuestionNative && (
+          <p className="mt-1 text-xs text-gray-500">
+            ({currentQuestionNative})
+          </p>
+        )}
+      </div>
+
 
         {/* 답변 언어 선택 */}
         <div className="mb-3">
@@ -806,13 +898,24 @@ setForeignPronNative(safePronNative);
       <span className="font-semibold">
         {texts.foreignSentenceLabel}
       </span>
-      <button
-        type="button"
-        onClick={playTTS}
-        className="rounded-full bg-indigo-600 px-3 py-1 text-xs text-white"
-      >
-        {texts.listenButton}
-      </button>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={playTTS}
+          className="rounded-full bg-indigo-600 px-3 py-1 text-xs text-white"
+        >
+          {texts.listenButton}
+        </button>
+
+        <button
+          type="button"
+          onClick={playTTSSlow}
+          className="rounded-full bg-indigo-400 px-3 py-1 text-xs text-white"
+        >
+          🐢 느리게 (0.5×)
+        </button>
+      </div>
     </div>
 
     <p className="mb-1">{foreignText}</p>
@@ -823,8 +926,9 @@ setForeignPronNative(safePronNative);
         {foreignPronNative}
       </p>
     )}
-     </div>
+  </div>
 )}
+
 
 {aiResult && (
   <div className="mb-4 space-y-3 rounded-xl bg-yellow-50 p-4 text-sm text-gray-800">

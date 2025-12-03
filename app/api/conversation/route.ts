@@ -113,6 +113,26 @@ INVALID pron_native: "나는 병원에 갔어요", "나눈 병원에 갔어요",
 If pron_native is not written using the user's nativeLanguage script, the entire response is considered INVALID.
 If pron_native repeats the foreign sentence as-is without phonetic transcription, the entire response is INVALID.
 pron_native MUST look like how a native speaker of the user's nativeLanguage would write the pronunciation to read it aloud naturally.
+
+If targetLanguage = "ru" AND nativeLanguage = "ko":
+pron_native MUST be written as natural Korean Hangul phonetic transcription of Russian sounds.
+NEVER copy the Russian sentence itself.
+Required phonetic style examples:
+  да → 다
+  как → 캍 / 캑 (강한 k 발음 반영)
+  вы → 븨 / 브이
+  мой → 모이
+  друг → 두룩
+  кофе → 코페
+  спасибо → 스빠씨바
+  пожалуйста → 빠쟈루이스따 / 빠잘스타 (자연스러운 음성 기반)
+Full-sentence pronunciation examples:
+  “Как дела?” → “캍 젤라?”
+  “Спасибо большое” → “스빠씨바 발쇼예”
+  “Я немного устал” → “야 님녹가 우스딸”
+GPT MUST apply the same Hangul-style phonetic transcription to ANY Russian sentence regardless of vocabulary difficulty.
+pron_native MUST look like something written by an average Korean speaker who wants to read Russian out loud naturally.
+
 Failure to follow this rule = DO NOT ANSWER. Try again inside valid JSON.
 `;
 
