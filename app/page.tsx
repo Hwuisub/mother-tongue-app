@@ -65,6 +65,34 @@ const QUESTIONS_BY_NATIVE: Record<string, string[]> = {
   ],
 };
 
+// ───────────── 난이도 텍스트 (모국어별) ─────────────
+const DIFFICULTY_LABELS: Record<string, { beginner: string; intermediate: string; advanced: string }> = {
+  ko: {
+    beginner: "초급",
+    intermediate: "중급",
+    advanced: "고급",
+  },
+  en: {
+    beginner: "Beginner",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+  },
+  fr: {
+    beginner: "Débutant",
+    intermediate: "Intermédiaire",
+    advanced: "Avancé",
+  },
+  es: {
+    beginner: "Principiante",
+    intermediate: "Intermedio",
+    advanced: "Avanzado",
+  },
+  ru: {
+    beginner: "Начальный",
+    intermediate: "Средний",
+    advanced: "Продвинутый",
+  },
+};
 const LABEL_NATIVE_PROMPT: Record<string, string> = {
   ko: "편하게 대답해보세요",
   en: "Answer comfortably",
@@ -493,6 +521,7 @@ const generateForeign = async () => {
     nativeLanguage: nativeLang,
     targetLanguage: targetLang,
     userMessage: inputText,
+    difficulty: difficulty,
     
   }),
 });
@@ -679,118 +708,119 @@ const goNext = () => {
     );
   }
 
-  // ────────── 화면 2: 언어 / 세트 설정 ──────────
-  if (step === "setup") {
-    const availableTargets = LANGUAGES.filter(
-      (l) => l.code !== nativeLang
-    );
+ // ────────── 화면 2: 언어 / 세트 설정 ──────────
+if (step === "setup") {
+  const labels = DIFFICULTY_LABELS[nativeLang];
+  const difficultyOptions = [
+    { key: "beginner", label: labels.beginner },
+    { key: "intermediate", label: labels.intermediate },
+    { key: "advanced", label: labels.advanced }
+  ];
+  const availableTargets = LANGUAGES.filter((l) => l.code !== nativeLang);
 
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-xl">
-          <h1 className="mb-2 text-2xl font-bold whitespace-pre-line">
-            {texts.setupTitle}
-          </h1>
-          <p className="mb-6 text-sm text-gray-600 leading-relaxed whitespace-pre-line">
-            {texts.setupSubtitle}
-          </p>
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-xl">
+        <h1 className="mb-2 text-2xl font-bold whitespace-pre-line">
+          {texts.setupTitle}
+        </h1>
+        <p className="mb-6 text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+          {texts.setupSubtitle}
+        </p>
 
-          <div className="mb-4">
-            <label className="mb-1 block text-sm font-semibold">
-              {texts.nativeLabel}
-            </label>
-            <select
-              value={nativeLang}
-              onChange={(e) => updateNativeLang(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            >
-              {LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-5">
-            <label className="mb-1 block text-sm font-semibold">
-              {texts.targetLabel}
-            </label>
-            <select
-              value={targetLang}
-              onChange={(e) => setTargetLang(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            >
-              {availableTargets.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-6">
-            <label className="mb-2 block text-sm font-semibold">
-              {texts.setsQuestion}
-            </label>
-            <div className="flex gap-2">
-              {[2, 4, 6].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setSets(n)}
-                  className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${
-                    sets === n
-                      ? "border-2 border-gray-900 bg-gray-900 text-white"
-                      : "border border-gray-300 bg-white text-gray-900"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">
-              {texts.setInfo}
-            </p>
-          </div>
-
-          <div className="mb-6">
-  <label className="mb-2 block text-sm font-semibold">난이도</label>
-  <div className="flex gap-2">
-    {["쉬움", "보통", "B1", "B2"].map((level) => (
-      <button
-        key={level}
-        type="button"
-        onClick={() => setDifficulty(level)}
-        className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${
-          difficulty === level
-            ? "border-2 border-gray-900 bg-gray-900 text-white"
-            : "border border-gray-300 bg-white text-gray-900"
-        }`}
-      >
-        {level}
-      </button>
-    ))}
-  </div>
-</div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setStep("practice");
-              setCurrentIndex(0);
-              setInputText("");
-              resetForeignOutputs();
-              setCurrentQuestion(questions[0]);
-            }}
-            className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+        {/* 모국어 선택 */}
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-semibold">{texts.nativeLabel}</label>
+          <select
+            value={nativeLang}
+            onChange={(e) => updateNativeLang(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           >
-            {texts.startPractice}
-          </button>
+            {LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
         </div>
-      </main>
-    );
-  }
+
+        {/* 목표 언어 선택 */}
+        <div className="mb-5">
+          <label className="mb-1 block text-sm font-semibold">{texts.targetLabel}</label>
+          <select
+            value={targetLang}
+            onChange={(e) => setTargetLang(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            {availableTargets.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 세트 개수 선택 */}
+        <div className="mb-6">
+          <label className="mb-2 block text-sm font-semibold">{texts.setsQuestion}</label>
+          <div className="flex gap-2">
+            {[2, 4, 6].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setSets(n)}
+                className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${
+                  sets === n
+                    ? "border-2 border-gray-900 bg-gray-900 text-white"
+                    : "border border-gray-300 bg-white text-gray-900"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">{texts.setInfo}</p>
+        </div>
+
+        {/* 난이도 선택 */}
+        <div className="mb-6">
+          <label className="mb-2 block text-sm font-semibold">난이도</label>
+          <div className="flex gap-2">
+            {difficultyOptions.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDifficulty(key)}
+                className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${
+                  difficulty === key
+                    ? "border-2 border-gray-900 bg-gray-900 text-white"
+                    : "border border-gray-300 bg-white text-gray-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 버튼 */}
+        <button
+          type="button"
+          onClick={() => {
+            setStep("practice");
+            setCurrentIndex(0);
+            setInputText("");
+            resetForeignOutputs();
+            setCurrentQuestion(questions[0]);
+          }}
+          className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+        >
+          {texts.startPractice}
+        </button>
+      </div>
+    </main>
+  );
+}
 
   // ────────── 화면 3: 실제 연습 ──────────
 const q = currentQuestion || questions[currentIndex];

@@ -1,9 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYSTEM_PROMPT = `
+// 난이도에 따라 문장 수준을 조절하는 설명을 만들어 주는 함수
+function buildDifficultyText(difficulty?: string): string {
+  switch (difficulty) {
+    case "beginner":
+      return "모든 문장과 다음 질문을 아주 쉽고 짧게, 초급(A2) 수준으로 만들어 주세요.";
+    case "intermediate":
+      return "문장과 다음 질문을 자연스러운 중급(B1~B2) 수준으로 만들어 주세요.";
+    case "advanced":
+    default:
+      return "문장과 다음 질문을 풍부한 표현과 난이도로, 고급(C1~C2) 수준으로 만들어 주세요.";
+  }
+}
+
+// SYSTEM PROMPT 전체를 만드는 함수 (난이도 문구 포함)
+function buildSystemPrompt(difficulty?: string): string {
+  const difficultyText = buildDifficultyText(difficulty);
+
+  return `
 You are a friendly and patient language exchange partner.
 
-INPUT FIELDS:
+⚠️ MOST IMPORTANT RULE — DIFFICULTY CONTROL
+${difficultyText}
+➡️ 난이도 지시사항은 모든 규칙보다 우선합니다. 번역·교정·다음 질문을 만들 때 반드시 반영하세요.
+
+====================================================
+INPUT FIELDS
+====================================================
 - nativeLanguage  (e.g. "ko", "en", "es", "fr", "ru")
 - targetLanguage
 - mode ("native" or "target")
@@ -19,36 +42,48 @@ ABSOLUTE RULES FOR pron_native
   - ko → Hangul only (예: "아이 웬트 투 워크")
   - en / es / fr → Latin alphabet
   - ru → Cyrillic
-pron_native MUST NOT include translation, grammar notes, quotes, brackets, IPA, or any extra text.
-pron_native MUST be ONLY the phonetic transcription of the FOREIGN sentence.
+- pron_native MUST NOT include translation, grammar notes, quotes, brackets, IPA, or any extra text.
+- pron_native MUST be ONLY the phonetic transcription of the FOREIGN sentence.
 
 If targetLanguage = "en" AND nativeLanguage = "ko", pron_native MUST be written in Hangul only (예: "I was upset" → "아이 워즈 업셋").
+
 If targetLanguage = "es" AND nativeLanguage = "ko":
 pron_native MUST be written as natural Korean Hangul phonetic transcription of Spanish sounds.
 NEVER copy the Spanish sentence itself.
+
 Required phonetic style examples:
   me → 메
   le → 레
   van → 반 / 빤
-  té / te → 떼 / 테 (강세 받으면 떼)
+  té / te → 떼 / 테
   fue / fui → 푸에 / 푸이
   baño → 바뇨
   pero → 페로
   tuve → 투베
   diarrea → 디아레아
-Examples of full-sentence transcription style:
+
+Full-sentence examples:
   “¿Cómo estás?” → “꼬모 에스따스”
   “Gracias” → “그라씨아스”
   “Mucho gusto” → “무초 구스토”
   “Hoy fue un día difícil” → “오이 푸에 운 디아 디피씰”
-GPT MUST apply the same Hangul-style phonetic transcription to ANY Spanish sentence.
-pron_native MUST look like something written by an average Korean speaker who wants to read Spanish out loud naturally.
 
-❗️If pron_native violates any rule, YOU MUST FIX IT yourself. Do not return the Spanish sentence itself as Hangul, always return phonetic transcription only.
+If targetLanguage = "ru" AND nativeLanguage = "ko":
+pron_native MUST be written as natural Korean Hangul phonetic transcription of Russian sounds.
+NEVER copy the Russian sentence itself.
+Examples:
+  да → 다
+  как → 캍 / 캑
+  вы → 븨 / 브이
+  мой → 모이
+  друг → 두룩
+  кофе → 코페
+  спасибо → 스빠씨바
+Full sentence examples:
+  “Как дела?” → “캍 젤라?”
+  “Спасибо большое” → “스빠씨바 발쇼예”
 
-FOREIGN sentence = translated_sentence when mode = "native".
-FOREIGN sentence = corrected_sentence when mode = "target".
-pron_native MUST ALWAYS be the phonetic transcription of the FOREIGN sentence ONLY — NEVER the user's original sentence.
+❗pron_native MUST ALWAYS be a natural phonetic transcription that a native speaker of the user's nativeLanguage would write to read the foreign sentence out loud naturally.
 
 ====================================================
 PRONUNCIATION PRAISE
@@ -62,21 +97,20 @@ BEHAVIOR RULES
 
 1) mode = "native"
    - Translate ONLY the user's message into the target language.
-   - Result must be a natural, full B1-level sentence.
-   - translated_sentence = that sentence (string)
-   - pron_native = pronunciation of translated_sentence (foreign sentence) using nativeLanguage script
-   - pronunciation_praise = short encouragement in nativeLanguage
+   - translated_sentence = natural, full sentence in the target language.
+   - pron_native = pronunciation of translated_sentence using nativeLanguage script.
+   - pronunciation_praise = short encouragement in nativeLanguage.
    - Ask exactly ONE follow-up question in the target language.
-   - AND always provide next_question_native = translation of that question in the nativeLanguage.
-   - ALWAYS include next_question_native = translation of next_question_target in the user's native language in native mode.
+   - ALWAYS provide next_question_native = translation of next_question_target in the user's nativeLanguage.
 
 2) mode = "target"
-   - original_sentence = user's original message
-   - corrected_sentence = lightly corrected natural B1 version (do not rewrite everything)
-   - correction_explanation = BRIEF explanation ONLY in nativeLanguage (never target language)
-   - pron_native = pronunciation of corrected_sentence using nativeLanguage script
-   - pronunciation_praise = short encouragement in nativeLanguage
-   - Ask exactly ONE follow-up question in the target language AND always include next_question_native translation.
+   - original_sentence = user's original message.
+   - corrected_sentence = lightly corrected natural version (do NOT completely rewrite).
+   - correction_explanation = brief explanation ONLY in user's nativeLanguage.
+   - pron_native = pronunciation of corrected_sentence using nativeLanguage script.
+   - pronunciation_praise = short encouragement in nativeLanguage.
+   - Ask exactly ONE follow-up question in the target language.
+   - ALWAYS provide next_question_native = translation of next_question_target in the user's nativeLanguage.
 
 ====================================================
 JSON RESPONSE FORMAT (MUST include all fields)
@@ -99,85 +133,77 @@ CRITICAL RESTRICTIONS
 - NEVER include anything outside the JSON.
 - NEVER include markdown.
 - NEVER leave a field empty.
-- For unused mode fields, set null (not "" and not "null").
-- SPECIAL RULE OVERRIDE:
-If nativeLanguage = "en" AND targetLanguage = "ko":
-pron_native MUST ALWAYS be a romanized English-alphabet pronunciation of the Korean sentence.
-NEVER include Hangul characters under ANY condition.
-NEVER copy the Korean sentence itself.
+- For unused fields → MUST be null (not "", not "null").
+- The entire response is INVALID if pron_native simply copies the foreign sentence instead of phonetic transcription.
+- If pron_native is not written using the user's nativeLanguage script, the entire response is INVALID and MUST be fixed automatically.
+
+====================================================
+SPECIAL OVERRIDE: nativeLanguage = "en", targetLanguage = "ko"
+====================================================
+- pron_native MUST ALWAYS be a romanized English-alphabet pronunciation of the Korean sentence.
+- NEVER include Hangul characters under ANY condition.
+- NEVER copy the Korean sentence itself.
 Example:
 Foreign sentence: "나는 병원에 갔어요."
 VALID pron_native: "na-neun byeong-won-e ga-sseo-yo"
 INVALID pron_native: "나는 병원에 갔어요", "나눈 병원에 갔어요", "나는 병원에 갔어"
--- HARD RULE ABOUT pron_native (DO NOT BREAK) --
-If pron_native is not written using the user's nativeLanguage script, the entire response is considered INVALID.
-If pron_native repeats the foreign sentence as-is without phonetic transcription, the entire response is INVALID.
-pron_native MUST look like how a native speaker of the user's nativeLanguage would write the pronunciation to read it aloud naturally.
 
-If targetLanguage = "ru" AND nativeLanguage = "ko":
-pron_native MUST be written as natural Korean Hangul phonetic transcription of Russian sounds.
-NEVER copy the Russian sentence itself.
-Required phonetic style examples:
-  да → 다
-  как → 캍 / 캑 (강한 k 발음 반영)
-  вы → 븨 / 브이
-  мой → 모이
-  друг → 두룩
-  кофе → 코페
-  спасибо → 스빠씨바
-  пожалуйста → 빠쟈루이스따 / 빠잘스타 (자연스러운 음성 기반)
-Full-sentence pronunciation examples:
-  “Как дела?” → “캍 젤라?”
-  “Спасибо большое” → “스빠씨바 발쇼예”
-  “Я немного устал” → “야 님녹가 우스딸”
-GPT MUST apply the same Hangul-style phonetic transcription to ANY Russian sentence regardless of vocabulary difficulty.
-pron_native MUST look like something written by an average Korean speaker who wants to read Russian out loud naturally.
-
-Failure to follow this rule = DO NOT ANSWER. Try again inside valid JSON.
+====================================================
+FINAL REMINDER — DIFFICULTY OVERRIDE
+====================================================
+${difficultyText}
+❗ 난이도 지시는 위 모든 규칙보다 최우선입니다.
+반드시 번역, 교정, follow-up 질문을 만들 때 이 난이도 지시를 반영하십시오.
 `;
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { mode, nativeLanguage, targetLanguage, userMessage } =
-      await req.json();
+    const {
+      userMessage,
+      nativeLanguage,
+      targetLanguage,
+      mode,
+      difficulty,
+    } = await req.json();
 
     const payload = {
       mode,
       nativeLanguage,
       targetLanguage,
       userMessage,
+      difficulty, // 참고용으로 같이 보냄
     };
 
-    const openaiRes = await fetch(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: 500,
-          temperature: 0.7,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content:
-                "Return ONLY JSON. Here is the user input:\n" +
-                JSON.stringify(payload),
-            },
-          ],
-        }),
-      }
-    );
+    const systemPrompt = buildSystemPrompt(difficulty);
 
-        if (!openaiRes.ok) {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 500,
+        temperature: 0.7,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content:
+              "Return ONLY JSON. Here is the user input:\n" +
+              JSON.stringify(payload),
+          },
+        ],
+      }),
+    });
+
+    if (!openaiRes.ok) {
       const errText = await openaiRes.text();
       console.error("🔴 RAW OpenAI ERROR =>", errText);
       return NextResponse.json(
@@ -189,7 +215,7 @@ export async function POST(req: NextRequest) {
     const json = await openaiRes.json();
     const content = json.choices?.[0]?.message?.content;
 
-    let parsed;
+    let parsed: any;
     try {
       parsed = JSON.parse(content);
     } catch (e) {
@@ -205,7 +231,6 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(parsed);
-
   } catch (error) {
     console.error("Conversation API error:", error);
     return NextResponse.json(
@@ -214,4 +239,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
