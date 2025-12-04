@@ -18,7 +18,6 @@ declare global {
     webkitSpeechRecognition: any;
   }
 }
-
 import { useEffect, useRef, useState } from "react";
 
 type SpeechRecognition = any;
@@ -319,7 +318,7 @@ export default function Home() {
   const [answerLang, setAnswerLang] =
     useState<AnswerLangMode>("native");
   const [sets, setSets] = useState(2);
-  const [difficulty, setDifficulty] = useState("B1");
+  const [difficulty, setDifficulty] = useState("intermediate");
 
 
   const [step, setStep] = useState<Step>("choose-native");
@@ -335,6 +334,7 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isListeningRef = useRef(false);
+  const finalBufferRef = useRef("");
 
   const [isRepeatListening, setIsRepeatListening] = useState(false);
   const repeatRecognitionRef =
@@ -364,6 +364,7 @@ export default function Home() {
 
 
   // ────────── 1) 말해서 입력용 음성 인식 ──────────
+    // ────────── 1) 말해서 입력용 음성 인식 ──────────
   useEffect(() => {
     if (typeof window === "undefined") return;
     const SR =
@@ -379,28 +380,58 @@ export default function Home() {
 
     recog.lang = langConfig ? langConfig.ttsLang : "ko-KR";
     recog.continuous = true;
-    recog.interimResults = false;
+    recog.interimResults = true; // 부분 인식
 
-    recog.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript;
-      setInputText(transcript);
+    // 한 번 확정된 문장을 따로 쌓아두는 버퍼
+    
+   recog.onresult = (e: any) => {
+  let newFinal = "";
+  let interim = "";
+
+  for (let i = 0; i < e.results.length; i++) {
+    const transcript = e.results[i][0].transcript.trim();
+    if (e.results[i].isFinal) {
+      newFinal += transcript + " ";
+    } else {
+      interim += transcript + " ";
+    }
+  }
+
+  // 1) 확정 문장 누적 (중복 방지)
+  if (newFinal.trim() !== "") {
+    if (!finalBufferRef.current.endsWith(newFinal.trim())) {
+      finalBufferRef.current = (finalBufferRef.current + " " + newFinal.trim()).trim();
+    }
+  }
+
+  // 2) 임시 문장은 화면 출력만 (확정 문장 뒤에 덮어쓰기)
+  const display = `${finalBufferRef.current}${interim ? " " + interim.trim() : ""}`.trim();
+  setInputText(display);
+};
+
+    // 에러 나면 마이크 상태 리셋 + 자동 재시작 막기
+    recog.onerror = (err: any) => {
+      console.error("SpeechRecognition error:", err);
+      isListeningRef.current = false;
+      setIsListening(false);
     };
 
-    recog.onerror = () => setIsListening(false);
-
+    // onend: 사용자가 STOP 누른 게 아니면 자동 재시작
     recog.onend = () => {
-      if (isListeningRef.current) {
-        try {
-          recog.start();
-        } catch {
-          setIsListening(false);
-        }
+      if (!isListeningRef.current) return;
+      try {
+        recog.start();
+      } catch (err) {
+        console.error("SpeechRecognition restart error:", err);
+        isListeningRef.current = false;
+        setIsListening(false);
       }
     };
 
     recognitionRef.current = recog;
 
     return () => {
+      isListeningRef.current = false;
       try {
         recog.abort();
       } catch {
@@ -409,6 +440,7 @@ export default function Home() {
     };
   }, [nativeLang, targetLang, answerLang]);
 
+  
   const handleMicToggle = () => {
     if (!recognitionRef.current) {
       alert("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
@@ -417,11 +449,10 @@ export default function Home() {
 
     if (!isListening) {
       if (isListeningRef.current) return;
-      setInputText("");
       setForeignText("");
       setForeignPronNative("");
       setRepeatCount(0);
-
+      
       isListeningRef.current = true;
       setIsListening(true);
       try {
@@ -442,64 +473,11 @@ export default function Home() {
     }
   };
 
-  // ────────── 2) 3번 따라 읽기용 음성 인식 ──────────
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const SR =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-
-    const recog: SpeechRecognition = new SR();
-    const langConfig = LANGUAGES.find(
-      (l) => l.code === targetLang
-    );
-    recog.lang = langConfig ? langConfig.ttsLang : "en-US";
-    recog.continuous = false;
-    recog.interimResults = false;
-
-    recog.onresult = (e: any) => {
-  const transcript = e.results[0][0].transcript || "";
-  console.log("읽은 내용:", transcript);
-  setIsRepeatListening(false);
-};
-
-
-    recog.onerror = () => setIsRepeatListening(false);
-    recog.onend = () => setIsRepeatListening(false);
-
-    repeatRecognitionRef.current = recog;
-
-    return () => {
-      try {
-        recog.abort();
-      } catch {
-        // ignore
-      }
-    };
-  }, [targetLang, foreignText]);
-
-  const handleRepeatMic = () => {
-    if (!foreignText.trim()) return;
-    if (!repeatRecognitionRef.current) {
-      alert("이 브라우저에서는 음성 인식을 지원하지 않습니다.");
-      return;
-    }
-    if (isRepeatListening) return;
-
-    setIsRepeatListening(true);
-    try {
-      repeatRecognitionRef.current.start();
-    } catch (err) {
-      console.error("Repeat SR start error:", err);
-      setIsRepeatListening(false);
-    }
-  };
-
-  const resetForeignOutputs = () => {
+    const resetForeignOutputs = () => {
     setForeignText("");
     setForeignPronNative("");
-    setRepeatCount(0);
     setAiResult(null); 
+    finalBufferRef.current = "";
   };
 
   // ────────── 3) 외국어 문장 생성 + 대화 파트너 응답 ──────────
@@ -517,7 +495,7 @@ const generateForeign = async () => {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    mode: answerLang.includes("모국어") || answerLang.includes("native") ? "native" : "target",
+    mode: answerLang === "native" ? "native" : "target",
     nativeLanguage: nativeLang,
     targetLanguage: targetLang,
     userMessage: inputText,
@@ -638,6 +616,42 @@ const playTTSSlow = async () => {
 
 
 // ⬇ 이것부터는 원래 그대로 존재해야 하는 goNext
+const q = currentQuestion || questions[currentIndex];
+// 🆕 세트가 시작될 때 질문 자동 TTS 재생
+useEffect(() => {
+  if (step !== "practice") return;
+  if (!q) return;
+
+  const speak = async () => {
+    try {
+      const textToSpeak =
+      aiResult?.next_question_target || q; // ⭐ 항상 외국어 질문을 TTS
+      const langConfig = LANGUAGES.find((l) => l.code === targetLang);
+      const ttsLang = langConfig ? langConfig.ttsLang : "en-US";
+
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: aiResult?.next_question_target || q,
+          ttsLang,
+        }),
+      });
+
+      const data = await res.json();
+      const blob = base64ToBlob(data.audioContent, "audio/mpeg");
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play();
+    } catch (e) {
+      console.error("Auto TTS error:", e);
+    }
+  };
+
+  speak();
+}, [q, step, targetLang]);
+
 const goNext = () => {
   if (!aiResult?.next_question_target) {
     alert("다음 질문을 받지 못했습니다.");
@@ -811,7 +825,12 @@ if (step === "setup") {
             setCurrentIndex(0);
             setInputText("");
             resetForeignOutputs();
-            setCurrentQuestion(questions[0]);
+            setCurrentQuestion(QUESTIONS_BY_NATIVE[targetLang][0]);
+            setCurrentQuestionNative(QUESTIONS_BY_NATIVE[nativeLang][0]);
+            setAiResult({
+             next_question_target: QUESTIONS_BY_NATIVE[targetLang][0],
+             next_question_native: QUESTIONS_BY_NATIVE[nativeLang][0],   // (같지만 위의 currentQuestionNative와 함께 있어야 함)
+           } as any);
           }}
           className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
         >
@@ -821,9 +840,6 @@ if (step === "setup") {
     </main>
   );
 }
-
-  // ────────── 화면 3: 실제 연습 ──────────
-const q = currentQuestion || questions[currentIndex];
 
 return (
   <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
@@ -837,7 +853,7 @@ return (
 
       <div className="mb-4 rounded-xl bg-gray-100 p-3 text-sm">
         {/* 메인 외국어 질문 */}
-        <p>{q}</p>
+        <p>{aiResult?.next_question_target || q}</p>
 
         {/* 모국어 해석 표시 */}
         {currentQuestionNative && (
@@ -899,6 +915,16 @@ return (
               {texts.typeInsteadHint}
             </span>
           </div>
+
+          {/* 🆕 음성 인식 바 표시 */}
+{isListening && (
+  <div className="flex gap-1 mt-2">
+    <div className="w-1 h-4 bg-blue-500 animate-pulse" />
+    <div className="w-1 h-6 bg-blue-500 animate-pulse delay-100" />
+    <div className="w-1 h-3 bg-blue-500 animate-pulse delay-200" />
+    <div className="w-1 h-5 bg-blue-500 animate-pulse delay-300" />
+  </div>
+)}
 
           <textarea
             value={inputText}
