@@ -385,54 +385,39 @@ export default function Home() {
     // 한 번 확정된 문장을 따로 쌓아두는 버퍼
     
 recog.onresult = (e: any) => {
-  let newFinal = "";
   let interim = "";
+  let latestFinal = "";
 
   for (let i = 0; i < e.results.length; i++) {
     const transcript = e.results[i][0].transcript.trim();
-
     if (e.results[i].isFinal) {
-      // mobile 중복 방지
-      if (transcript !== "") {
-        const lastFinal = finalBufferRef.current.split(" ").pop() || "";
-        if (transcript !== lastFinal) {
-          newFinal += transcript + " ";
-        }
-      }
+      latestFinal = transcript; // 모바일 최종결과는 전체 누적본
     } else {
       interim += transcript + " ";
     }
   }
 
-  if (newFinal.trim() !== "") {
-    finalBufferRef.current = (finalBufferRef.current + " " + newFinal.trim()).trim();
+  // 🔥 모바일 중복 완전 차단: 기존 확정과 비교해 "추가된 부분만" 추출
+  if (latestFinal) {
+    const prev = finalBufferRef.current;
+    if (latestFinal.startsWith(prev)) {
+      const extra = latestFinal.slice(prev.length).trim();
+      if (extra) {
+        finalBufferRef.current = (prev + " " + extra).trim();
+      }
+    } else {
+      // 비정상 흐름 대비
+      finalBufferRef.current = latestFinal.trim();
+    }
   }
 
+  // 화면 표시 = 확정 + 임시
   const display =
     finalBufferRef.current +
     (interim.trim() ? " " + interim.trim() : "");
 
   setInputText(display.trim());
 };
-
-    // 에러 나면 마이크 상태 리셋 + 자동 재시작 막기
-    recog.onerror = (err: any) => {
-      console.error("SpeechRecognition error:", err);
-      isListeningRef.current = false;
-      setIsListening(false);
-    };
-
-    // onend: 사용자가 STOP 누른 게 아니면 자동 재시작
-    recog.onend = () => {
-      if (!isListeningRef.current) return;
-      try {
-        recog.start();
-      } catch (err) {
-        console.error("SpeechRecognition restart error:", err);
-        isListeningRef.current = false;
-        setIsListening(false);
-      }
-    };
 
     recognitionRef.current = recog;
 
@@ -454,29 +439,34 @@ recog.onresult = (e: any) => {
     }
 
     if (!isListening) {
-      if (isListeningRef.current) return;
-      setForeignText("");
-      setForeignPronNative("");
-      setRepeatCount(0);
-      
-      isListeningRef.current = true;
-      setIsListening(true);
-      try {
-        recognitionRef.current.start();
-      } catch (err) {
-        console.error("SpeechRecognition start error:", err);
-        isListeningRef.current = false;
-        setIsListening(false);
-      }
-    } else {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
+    if (isListeningRef.current) return;
+
+    // ⬇ 기존 텍스트는 그대로 두고, 외국어 출력만 초기화
+    setForeignText("");
+    setForeignPronNative("");
+    setRepeatCount(0);
+
+    // ⬇🔥 여기서 버퍼를 "현재 화면에 있는 문장"으로 맞춰 줌
+    finalBufferRef.current = inputText.trim();
+
+    isListeningRef.current = true;
+    setIsListening(true);
+    try {
+      recognitionRef.current.start();
+    } catch (err) {
+      console.error("SpeechRecognition start error:", err);
       isListeningRef.current = false;
       setIsListening(false);
     }
+  } else {
+    try {
+      recognitionRef.current.stop();
+    } catch {
+      // ignore
+    }
+    isListeningRef.current = false;
+    setIsListening(false);
+  }
   };
 
     const resetForeignOutputs = () => {
