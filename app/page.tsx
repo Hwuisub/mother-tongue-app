@@ -384,29 +384,35 @@ export default function Home() {
 
     // 한 번 확정된 문장을 따로 쌓아두는 버퍼
     
-   recog.onresult = (e: any) => {
+recog.onresult = (e: any) => {
   let newFinal = "";
   let interim = "";
 
   for (let i = 0; i < e.results.length; i++) {
     const transcript = e.results[i][0].transcript.trim();
+
     if (e.results[i].isFinal) {
-      newFinal += transcript + " ";
+      // mobile 중복 방지
+      if (transcript !== "") {
+        const lastFinal = finalBufferRef.current.split(" ").pop() || "";
+        if (transcript !== lastFinal) {
+          newFinal += transcript + " ";
+        }
+      }
     } else {
       interim += transcript + " ";
     }
   }
 
-  // 1) 확정 문장 누적 (중복 방지)
   if (newFinal.trim() !== "") {
-    if (!finalBufferRef.current.endsWith(newFinal.trim())) {
-      finalBufferRef.current = (finalBufferRef.current + " " + newFinal.trim()).trim();
-    }
+    finalBufferRef.current = (finalBufferRef.current + " " + newFinal.trim()).trim();
   }
 
-  // 2) 임시 문장은 화면 출력만 (확정 문장 뒤에 덮어쓰기)
-  const display = `${finalBufferRef.current}${interim ? " " + interim.trim() : ""}`.trim();
-  setInputText(display);
+  const display =
+    finalBufferRef.current +
+    (interim.trim() ? " " + interim.trim() : "");
+
+  setInputText(display.trim());
 };
 
     // 에러 나면 마이크 상태 리셋 + 자동 재시작 막기
