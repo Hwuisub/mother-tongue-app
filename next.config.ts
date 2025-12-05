@@ -5,3 +5,7 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+export async function generateBuildId() {
+  return String(Date.now());
+}
