@@ -473,7 +473,6 @@ recog.onresult = (e: any) => {
     setForeignText("");
     setForeignPronNative("");
     setAiResult(null); 
-    finalBufferRef.current = "";
   };
 
   // ────────── 3) 외국어 문장 생성 + 대화 파트너 응답 ──────────
