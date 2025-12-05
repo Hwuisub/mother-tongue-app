@@ -386,38 +386,35 @@ export default function Home() {
     
 recog.onresult = (e: any) => {
   let interim = "";
-  let latestFinal = "";
+  let finalFromMobile = "";
 
   for (let i = 0; i < e.results.length; i++) {
     const transcript = e.results[i][0].transcript.trim();
     if (e.results[i].isFinal) {
-      latestFinal = transcript; // 모바일 최종결과는 전체 누적본
+      finalFromMobile = transcript; // 모바일은 전체 문장을 통째로 줌
     } else {
       interim += transcript + " ";
     }
   }
 
-  // 🔥 모바일 중복 완전 차단: 기존 확정과 비교해 "추가된 부분만" 추출
-  if (latestFinal) {
-    const prev = finalBufferRef.current;
-    if (latestFinal.startsWith(prev)) {
-      const extra = latestFinal.slice(prev.length).trim();
-      if (extra) {
-        finalBufferRef.current = (prev + " " + extra).trim();
-      }
-    } else {
-      // 비정상 흐름 대비
-      finalBufferRef.current = latestFinal.trim();
-    }
+  // 🔥 final은 "전체 문장"으로 교체 (누적 금지)
+  if (finalFromMobile) {
+  if (finalFromMobile.startsWith(finalBufferRef.current)) {
+    const extra = finalFromMobile.slice(finalBufferRef.current.length).trim();
+    if (extra) finalBufferRef.current += " " + extra;
+  } else {
+    finalBufferRef.current = finalFromMobile;
   }
+}
 
-  // 화면 표시 = 확정 + 임시
+  // 화면 출력: final + interim
   const display =
     finalBufferRef.current +
     (interim.trim() ? " " + interim.trim() : "");
 
   setInputText(display.trim());
 };
+
 
     recognitionRef.current = recog;
 
