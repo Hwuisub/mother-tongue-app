@@ -444,7 +444,9 @@ recog.onresult = (e: any) => {
     setRepeatCount(0);
 
     // ⬇🔥 여기서 버퍼를 "현재 화면에 있는 문장"으로 맞춰 줌
-    finalBufferRef.current = inputText.trim();
+    if (inputText.trim()) {
+  finalBufferRef.current = inputText.trim();
+}
 
     isListeningRef.current = true;
     setIsListening(true);
